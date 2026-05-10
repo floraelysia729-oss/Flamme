@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llm-wiki"
+version = "2.0.0"
+description = "Local knowledge base assistant with LLM-powered ingestion and retrieval"
+requires-python = ">=3.10"
+dependencies = [
+    "openai>=1.0",
+    "numpy>=1.24",
+    "pyyaml>=6.0",
+    "python-dotenv>=1.0",
+    "graphifyy>=0.4",
+    "networkx>=3.0",
+    "fastapi>=0.100",
+    "uvicorn[standard]>=0.20",
+    "lzstring>=1.0",
+    "httpx>=0.24",
+    "Pillow>=9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+]
+
+[project.scripts]
+llm-wiki = "src.main:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+include = ["src*"]

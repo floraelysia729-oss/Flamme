@@ -1,0 +1,21 @@
+agents:
+  - name: orchestrator
+    type: orchestrator
+    description: "Orchestrator — GLM 5.1 驱动的用户交互层，理解意图、调度工具和 Worker"
+    model: glm-5.1
+    tools:
+      - wiki_search
+      - wiki_read_page
+      - wiki_create_page
+      - wiki_update_page
+      - graph_query
+      - entity_extract
+      - document_ingest
+      - wiki_lint
+    enabled: true
+
+  - name: default
+    type: default
+    description: "默认知识库助手 — 语义检索 + LLM 回答（兼容旧模式）"
+    tools: []
+    enabled: true

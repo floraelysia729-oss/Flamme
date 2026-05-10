@@ -1,0 +1,42 @@
+# 敏感配置
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# 测试 / 缓存
+.pytest_cache/
+
+# Node
+flamme/node_modules/
+
+# IDE
+.vscode/
+.idea/
+
+# 知识库数据（可由 sync 重建）
+.wiki/
+*.db
+*.npy
+
+# 系统文件
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Claude Code
+.claude/
+
+# 备份
+src-solid-backup/
+Home DB
+
+# 运行时产物
+output/
+*.log

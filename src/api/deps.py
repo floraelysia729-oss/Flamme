@@ -1,0 +1,78 @@
+"""FastAPI 依赖注入 — lru_cache 单例"""
+
+from functools import lru_cache
+
+from src.config import load_config, Config
+from src.db.client import SQLiteClient
+from src.tools.bootstrap import build_registry
+from src.tools.registry import ToolRegistry
+from src.tools.embedding_store import EmbeddingStore
+from src.llm.provider import DefaultLLM
+from src.llm.queue import LLMQueue
+
+
+@lru_cache
+def get_config() -> Config:
+    return load_config()
+
+
+@lru_cache
+def get_db() -> SQLiteClient:
+    cfg = get_config()
+    return SQLiteClient(cfg.db_path, vault_path=cfg.vault_path)
+
+
+@lru_cache
+def get_tool_registry() -> ToolRegistry:
+    """统一注册入口 — 调用 bootstrap.build_registry()"""
+    return build_registry(
+        config=get_config(),
+        db=get_db(),
+        llm=get_llm(),
+        embedding_store=get_embedding_store(),
+    )
+
+
+@lru_cache
+def get_embedding_store() -> EmbeddingStore:
+    cfg = get_config()
+    return EmbeddingStore(cfg.embeddings_dir, dim=cfg.embed_dim)
+
+
+@lru_cache
+def get_llm() -> DefaultLLM | None:
+    cfg = get_config()
+    if not cfg.llm_api_key and not cfg.embed_api_key:
+        return None
+    return DefaultLLM(
+        api_key=cfg.llm_api_key,
+        base_url=cfg.llm_base_url,
+        model=cfg.llm_model,
+        embed_api_key=cfg.embed_api_key,
+        embed_base_url=cfg.embed_base_url,
+        embed_model=cfg.embed_model,
+    )
+
+
+@lru_cache
+def get_brain_llm() -> DefaultLLM | None:
+    """GLM 5.1 — Orchestrator 专用"""
+    cfg = get_config()
+    if not cfg.brain_api_key:
+        return None
+    return DefaultLLM(
+        api_key=cfg.brain_api_key,
+        base_url=cfg.brain_base_url,
+        model=cfg.brain_model,
+        embed_api_key=cfg.embed_api_key,
+        embed_base_url=cfg.embed_base_url,
+        embed_model=cfg.embed_model,
+    )
+
+
+@lru_cache
+def get_llm_queue() -> LLMQueue | None:
+    llm = get_llm()
+    if not llm:
+        return None
+    return LLMQueue(max_concurrency=get_config().max_concurrency)

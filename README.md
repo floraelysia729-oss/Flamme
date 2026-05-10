@@ -35,7 +35,7 @@ npm install
 
 - Python >= 3.10
 - Node.js >= 18
-- OCR 服务（可选）：[UmiOCR](https://github.com/hiroi-sora/UmiOCR) 运行在 `localhost:1224`
+- OCR 服务（可选）：[UmiOCR](https://github.com/hiroi-sora/UmiOCR)，启动后默认监听 `localhost:1224`
 
 ## 配置
 

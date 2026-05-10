@@ -1,15 +1,5 @@
 # Flamme
 
-<div align="center">
-  <a href="https://floraelysia729-oss.github.io/Flamme/flamme-avatar.html">
-    <img src="flamme/public/icon.svg" width="120" height="120" alt="Flamme">
-  </a>
-  <br>
-  <a href="https://floraelysia729-oss.github.io/Flamme/flamme-avatar.html">
-    <strong>查看 Flamme 动画 →</strong>
-  </a>
-</div>
-
 本地知识库插件 — LLM 驱动的摄入、检索和知识图谱管理，为 Obsidian vault 打造。
 
 ## 架构

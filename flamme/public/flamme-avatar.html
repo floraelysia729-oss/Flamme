@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flamme 知识助手</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #F5F0EB;
+    font-family: 'Courier New', monospace;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    padding: 20px;
+  }
+  h1 { color: #DD6236; font-size: 20px; margin-bottom: 6px; letter-spacing: 2px; }
+  .subtitle { color: #999; font-size: 11px; margin-bottom: 16px; letter-spacing: 1px; }
+
+  .avatar-wrap {
+    position: relative;
+    width: 200px; height: 200px;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.06);
+    background: #FDFBFA;
+  }
+  .avatar-wrap canvas {
+    width: 200px; height: 200px;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+  }
+
+  .state-label {
+    margin-top: 8px;
+    color: #DD6236;
+    font-size: 13px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    min-height: 18px;
+  }
+  .color-dot {
+    display: inline-block;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    vertical-align: middle;
+    margin-right: 4px;
+  }
+
+  .controls {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    margin-top: 14px; justify-content: center;
+  }
+  .controls button {
+    padding: 6px 14px;
+    border: 2px solid #DD6236;
+    border-radius: 8px;
+    background: #fff;
+    color: #DD6236;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .controls button:hover { background: #DD6236; color: #fff; }
+  .controls button.active { background: #DD6236; color: #fff; }
+
+  .api-hint {
+    margin-top: 20px;
+    background: #FFF;
+    border-radius: 10px;
+    padding: 14px 18px;
+    max-width: 440px;
+    width: 100%;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  }
+  .api-hint h3 { color: #DD6236; font-size: 13px; margin-bottom: 8px; }
+  .api-hint pre {
+    background: #F9F7F4;
+    border-radius: 6px;
+    padding: 10px;
+    font-size: 11px;
+    color: #666;
+    overflow-x: auto;
+    line-height: 1.6;
+  }
+  .api-hint code { color: #DD6236; }
+
+  .chat-demo {
+    margin-top: 20px;
+    background: #fff;
+    border-radius: 12px;
+    padding: 16px;
+    max-width: 480px;
+    width: 100%;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  }
+  .chat-demo h3 { color: #DD6236; font-size: 13px; margin-bottom: 10px; }
+  .chat-row {
+    display: flex; gap: 10px; margin-bottom: 10px; align-items: flex-start;
+  }
+  .chat-row .mini-avatar {
+    width: 40px; height: 40px;
+    border-radius: 8px; overflow: hidden; flex-shrink: 0;
+    background: #FDFBFA;
+  }
+  .chat-row .mini-avatar canvas {
+    width: 40px; height: 40px;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+  }
+  .chat-bubble {
+    background: #F9F7F4;
+    border-radius: 10px;
+    padding: 8px 12px;
+    font-size: 12px;
+    color: #555;
+    max-width: 320px;
+    line-height: 1.5;
+  }
+  .chat-bubble.user { background: #DD6236; color: #fff; }
+</style>
+</head>
+<body>
+
+<h1>Flamme 知识助手</h1>
+<div class="subtitle">pixel flame animation</div>
+
+<div class="avatar-wrap">
+  <canvas id="c" width="720" height="720"></canvas>
+</div>
+<div class="state-label" id="stateLabel">peek</div>
+
+<div class="controls">
+  <button onclick="flammeSetState('peek')">探头出场</button>
+  <button onclick="flammeSetState('look')">左右张望</button>
+  <button onclick="flammeSetState('think')">思考</button>
+  <button onclick="flammeSetState('happy')">开心微笑</button>
+  <button onclick="flammeSetState('answer')">回答中</button>
+  <button onclick="flammeSetState('confused')">困惑</button>
+</div>
+
+<div class="api-hint">
+  <h3>Embedding API</h3>
+<pre><code>flammeSetState('think');
+flammeSetState('answer');
+flammeSetState('happy');
+// 状态: peek | look | think | happy | answer | confused
+// 颜色: peek→红 look→绿 think→蓝 happy→粉 answer→红 confused→蓝</code></pre>
+</div>
+
+<div class="chat-demo">
+  <h3>Chat Integration Demo</h3>
+  <div class="chat-row">
+    <div class="mini-avatar">
+      <canvas id="miniC" width="720" height="720"></canvas>
+    </div>
+    <div class="chat-bubble" id="chatMsg">你好！我是 Flamme 知识助手，有什么可以帮你的吗？</div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════
+// COLORS
+// ═══════════════════════════════════════════
+const FC = {
+  red:   { outer:'#8B1A10', mid:'#C04A28', core:'#F5C5A0', hi:'#FDE8D8', spark:'#C04A28', dot:'#EEDDD8' },
+  blue:  { outer:'#1A3A5C', mid:'#3A7AB0', core:'#A8CCE8', hi:'#D8E8F5', spark:'#3A7AB0', dot:'#D8E0EE' },
+  green: { outer:'#194F1B', mid:'#3BA34F', core:'#B3D8A7', hi:'#D0E9DD', spark:'#3BA34F', dot:'#E6EEE2' },
+  pink:  { outer:'#8B2050', mid:'#C04A78', core:'#F5C5D8', hi:'#FDE8F0', spark:'#C04A78', dot:'#EED8E2' },
+};
+const STATE_COLOR = { peek:'red', look:'green', think:'blue', happy:'pink', answer:'red', confused:'blue' };
+let currentFlameColor = 'red';
+
+// ═══════════════════════════════════════════
+// GRID
+// ═══════════════════════════════════════════
+const PX = 20, GW = 36, GH = 36;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+
+function px(x,y,c) {
+  if(c){ctx.fillStyle=c;ctx.fillRect(Math.round(x)*PX,Math.round(y)*PX,PX,PX);}
+}
+function fillRect(x,y,w,h,c) {
+  for(let dy=0;dy<h;dy++) for(let dx=0;dx<w;dx++) px(x+dx,y+dy,c);
+}
+
+// ═══════════════════════════════════════════
+// BACKGROUND — 点阵米白卡片
+// ═══════════════════════════════════════════
+
+function drawBg(f) {
+  const C=FC[currentFlameColor];
+  ctx.fillStyle='#FDFBFA'; ctx.fillRect(0,0,720,720);
+  // 细微圆点矩阵 ~8px 间距 (29px canvas units)
+  ctx.fillStyle=C.dot; ctx.globalAlpha=0.35;
+  for(let y=0;y<720;y+=29)
+    for(let x=0;x<720;x+=29)
+      ctx.fillRect(x,y,2,2);
+  ctx.globalAlpha=1;
+}
+
+// ═══════════════════════════════════════════
+// FLAME CHARACTER — 像素轮廓版
+// ═══════════════════════════════════════════
+const FX = 18, FY = 18; // 火焰中心
+
+// 火焰轮廓切片: [dy, halfWidth]
+// 球形: 顶部快速展开 → 中部最宽 → 底部收窄连接木柴
+const SLICES = {
+  outer: [[-12,1],[-11,2],[-10,3],[-9,5],[-8,6],[-7,7],[-6,7],[-5,8],[-4,8],[-3,8],[-2,8],[-1,8],[0,8],[1,8],[2,7],[3,7],[4,6],[5,5],[6,5]],
+  mid:   [[-9,1],[-8,3],[-7,5],[-6,5],[-5,6],[-4,6],[-3,6],[-2,6],[-1,6],[0,6],[1,6],[2,5],[3,5],[4,3]],
+  core:  [[-6,1],[-5,3],[-4,4],[-3,5],[-2,5],[-1,5],[0,5],[1,4],[2,3],[3,2]],
+  hi:    [[-4,2],[-3,3],[-2,3],[-1,2]]
+};
+
+// 绘制火焰身体（多层切片）
+function drawFlameBody(cx, cy, C, flicker) {
+  for (const key of ['outer','mid','core','hi']) {
+    const color = C[key];
+    for (const [dy, hw] of SLICES[key]) {
+      // 微妙的宽度抖动 = 火焰闪烁感
+      const fw = Math.round(Math.sin(flicker*0.08 + dy*0.4)*0.6);
+      for (let x = -(hw+fw); x <= (hw+fw); x++) px(cx+x, cy+dy, color);
+      // 外层锯齿边缘像素（顶部更密集，模拟火焰轮廓）
+      if (key === 'outer' && hw > 1) {
+        const topBoost = dy < -6 ? 0.3 : 0;
+        if (Math.sin(dy*2.7+flicker*0.05)>-topBoost) px(cx-hw-fw-1, cy+dy, color);
+        if (Math.sin(dy*1.9+flicker*0.07+1)>-topBoost) px(cx+hw+fw+1, cy+dy, color);
+        if (dy < -8 && Math.sin(dy*3.5+flicker*0.06)>-0.2) {
+          px(cx-hw-fw-2, cy+dy, color);
+          px(cx+hw+fw+2, cy+dy, color);
+        }
+      }
+    }
+  }
+}
+
+// 火焰尖端（独立于主体的3个火舌）
+function drawTip(tx, ty, h, c1, c2, c3) {
+  for(let i=0;i<h;i++){
+    const w=Math.max(0,Math.floor((h-i)*0.55));
+    for(let j=-w;j<=w;j++){
+      const c = i===0 ? c1 : (i<h*0.3 ? (c3||c2) : c2);
+      px(tx+j, ty-i, c);
+    }
+  }
+}
+
+function drawFlameTips(cx, cy, C, flicker) {
+  const sw1=Math.sin(flicker*0.13), sw2=Math.sin(flicker*0.17+1.5), sw3=Math.sin(flicker*0.11+3.0);
+  const sw4=Math.sin(flicker*0.09+4.0);
+  const h1=3+Math.round(Math.abs(Math.sin(flicker*0.09))*2);
+  const h2=5+Math.round(Math.abs(Math.sin(flicker*0.07))*2);
+  const h3=3+Math.round(Math.abs(Math.sin(flicker*0.1+2))*2);
+  const h4=2+Math.round(Math.abs(Math.sin(flicker*0.12+1))*2);
+
+  // 左火舌
+  drawTip(cx-4+Math.round(sw1*1), cy-11, h1, C.outer, C.mid);
+  // 中央火舌（最高）— 从圆顶伸出
+  drawTip(cx+Math.round(sw2*0.5), cy-12, h2, C.outer, C.mid, C.core);
+  // 右火舌
+  drawTip(cx+4+Math.round(sw3*-1), cy-10, h3, C.outer, C.mid);
+  // 额外小火舌 — 增加火冠层次感
+  drawTip(cx-2+Math.round(sw4*0.5), cy-13, h4, C.outer, C.mid);
+}
+
+// 浮动火星（概念图中的小火焰碎片）
+function drawEmbers(cx, cy, C, f) {
+  const positions = [
+    {ox:-10, oy:-9, ph:0},  {ox:10, oy:-6, ph:1.5},
+    {ox:-7, oy:-13, ph:3},  {ox:9, oy:-11, ph:4.5},
+    {ox:-11, oy:-4, ph:2.5},{ox:11, oy:-9, ph:5.0}
+  ];
+  for (const e of positions) {
+    const vis = Math.sin(f*0.06+e.ph);
+    if (vis > 0) {
+      const yoff = Math.round(Math.sin(f*0.04+e.ph)*2);
+      ctx.globalAlpha = vis * 0.7;
+      px(cx+e.ox, cy+e.oy+yoff, C.outer);
+      px(cx+e.ox, cy+e.oy+yoff-1, C.mid);
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+
+// 木柴底座 — 21px 宽，3 行高
+function drawLog(cx, by) {
+  fillRect(cx-9,by,19,3,'#654321');
+  fillRect(cx-8,by,17,1,'#7A5A35');
+  fillRect(cx-7,by+1,15,1,'#6B4E2F');
+  px(cx-5,by+2,'#3A2510');
+  px(cx-1,by+2,'#3A2510');
+  px(cx+4,by+2,'#3A2510');
+  px(cx+1,by+1,'#3A2510');
+  // 年轮端面
+  px(cx-10,by,'#7A5A35'); px(cx-10,by+1,'#654321'); px(cx-10,by+2,'#543219');
+  px(cx+10,by,'#7A5A35'); px(cx+10,by+1,'#654321'); px(cx+10,by+2,'#543219');
+}
+
+// ── 完整火焰绘制 ──
+function drawFlame(cx, cy, opts={}) {
+  const { color='red', eyes='forward', mouth='neutral',
+          flicker=0, bounce=0, tilt=0, offsetY=0 } = opts;
+  const C = FC[color];
+  const y = cy + Math.round(bounce) + Math.round(offsetY);
+  const t = Math.round(tilt);
+
+  // 1. 光晕（幽灵光晕 — hi 色）
+  ctx.globalAlpha=0.15;
+  for(const [dy,hw] of SLICES.outer){
+    for(let x=-(hw+3);x<=(hw+3);x++) px(cx+t+x, y+dy, C.hi);
+  }
+  ctx.globalAlpha=1;
+
+  // 2. 木柴（先画，火焰覆盖其上 → 无缝连接）
+  drawLog(cx+t, y+6);
+
+  // 3. 火舌尖端
+  drawFlameTips(cx+t, y, C, flicker);
+
+  // 4. 火焰身体（覆盖木柴顶部，宽连接）
+  drawFlameBody(cx+t, y, C, flicker);
+
+  // 5. 浮动火星
+  drawEmbers(cx+t, y, C, flicker);
+
+  // 6. 脸部
+  drawFlameEyes(cx+t, y-3, eyes);
+  drawFlameMouth(cx+t, y+1, mouth);
+}
+
+// ── 眼睛: 2×2 ──
+function drawFlameEyes(cx, ey, type) {
+  const lx=cx-3, rx=cx+2;
+  switch(type) {
+    case 'forward':
+      fillRect(lx,ey,2,2,'#FFF'); fillRect(rx,ey,2,2,'#FFF');
+      px(lx+1,ey+1,'#000'); px(rx,ey+1,'#000');
+      break;
+    case 'left':
+      fillRect(lx,ey,2,2,'#FFF'); fillRect(rx,ey,2,2,'#FFF');
+      px(lx,ey+1,'#000'); px(rx,ey+1,'#000');
+      break;
+    case 'right':
+      fillRect(lx,ey,2,2,'#FFF'); fillRect(rx,ey,2,2,'#FFF');
+      px(lx+1,ey+1,'#000'); px(rx+1,ey+1,'#000');
+      break;
+    case 'up':
+      fillRect(lx,ey,2,2,'#FFF'); fillRect(rx,ey,2,2,'#FFF');
+      px(lx+1,ey,'#000'); px(rx,ey,'#000');
+      break;
+    case 'happy':
+      px(lx,ey+1,'#000'); px(lx+1,ey,'#000');
+      px(rx,ey,'#000'); px(rx+1,ey+1,'#000');
+      break;
+    case 'blink':
+      fillRect(lx,ey+1,2,1,'#000'); fillRect(rx,ey+1,2,1,'#000');
+      break;
+    case 'wide':
+      fillRect(lx,ey,2,2,'#FFF'); fillRect(rx,ey,2,2,'#FFF');
+      px(lx+1,ey,'#000'); px(rx,ey,'#000');
+      break;
+  }
+}
+
+// ── 嘴巴 ──
+function drawFlameMouth(cx, my, type) {
+  switch(type) {
+    case 'neutral': fillRect(cx-1,my,3,1,'#333'); break;
+    case 'smile':
+      px(cx-2,my-1,'#333'); fillRect(cx-1,my,3,1,'#333'); px(cx+2,my-1,'#333');
+      break;
+    case 'open': fillRect(cx-1,my,3,2,'#333'); px(cx,my+1,'#554'); break;
+    case 'small': px(cx,my,'#333'); break;
+    case 'o':
+      fillRect(cx-1,my,3,1,'#333'); px(cx-1,my+1,'#333'); px(cx+1,my+1,'#333');
+      break;
+  }
+}
+
+// ═══════════════════════════════════════════
+// EFFECTS
+// ═══════════════════════════════════════════
+let particles = [];
+function addP(x,y,c,vx,vy) {
+  particles.push({x,y,vx:vx||(Math.random()-.5)*.5,vy:vy||(-Math.random()*.5-.2),life:1,c});
+}
+function tickP() {
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i]; p.x+=p.vx; p.y+=p.vy; p.vy+=0.02; p.life-=0.018;
+    if(p.life<=0){particles.splice(i,1);continue;}
+    if(p.life>0.1){ctx.globalAlpha=Math.min(1,p.life*1.5);px(Math.round(p.x),Math.round(p.y),p.c);ctx.globalAlpha=1;}
+  }
+}
+
+function drawBubble(bx,by,text) {
+  const tw=text.length+2;
+  for(let y=0;y<3;y++) for(let x=0;x<tw;x++){
+    if((y===0||y===2)&&(x===0||x===tw-1))continue;
+    px(bx+x,by+y,(y===0||y===2||x===0||x===tw-1)?'#CCC':'#FFF');
+  }
+  px(bx+1,by+3,'#CCC');
+  ctx.fillStyle='#666';ctx.font='bold 12px Courier New';ctx.textAlign='left';ctx.textBaseline='top';
+  ctx.fillText(text,(bx+1)*PX+4,by*PX+7);
+}
+
+function drawQuestion(qx,qy) {
+  ctx.fillStyle='#DD6236';ctx.font='bold 28px Courier New';ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillText('?',qx*PX+PX/2,qy*PX+PX/2);
+}
+
+function drawDots(dx,dy,count,alpha) {
+  ctx.globalAlpha=Math.max(0,Math.min(1,alpha));ctx.fillStyle='#999';ctx.font='bold 16px Courier New';
+  ctx.textAlign='left';ctx.textBaseline='top';
+  for(let i=0;i<count;i++) ctx.fillText('.',(dx+i*2)*PX,dy*PX);
+  ctx.globalAlpha=1;
+}
+
+function drawHeartPixel(hx,hy,c) {
+  px(hx,hy,c);px(hx+2,hy,c);
+  px(hx-1,hy+1,c);px(hx,hy+1,c);px(hx+1,hy+1,c);px(hx+2,hy+1,c);
+  px(hx,hy+2,c);px(hx+1,hy+2,c);px(hx+1,hy+3,c);
+}
+
+// ═══════════════════════════════════════════
+// EASING
+// ═══════════════════════════════════════════
+function easeOut(t){return 1-Math.pow(1-t,3);}
+function easeInOut(t){return t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;}
+function lerp(a,b,t){return a+(b-a)*t;}
+
+// ═══════════════════════════════════════════
+// STATE MACHINE
+// ═══════════════════════════════════════════
+const FPS = 30;
+const STATE_DUR = { peek:2.5, look:6, think:4, happy:3, answer:3, confused:3 };
+let currentState = 'peek';
+
+function setState(name) {
+  if (!STATE_DUR[name]) return;
+  currentState = name;
+  currentFlameColor = STATE_COLOR[name]||'red';
+  particles = [];
+  const labels = {peek:'探头出场',look:'左右张望',think:'思考',happy:'开心微笑',answer:'回答中',confused:'困惑'};
+  document.getElementById('stateLabel').innerHTML =
+    `<span class="color-dot" style="background:${FC[currentFlameColor].mid}"></span>${labels[name]||name}`;
+  document.querySelectorAll('.controls button').forEach(b=>b.classList.remove('active'));
+  const btns=document.querySelectorAll('.controls button');
+  const idx=['peek','look','think','happy','answer','confused'].indexOf(name);
+  if(idx>=0&&btns[idx]) btns[idx].classList.add('active');
+}
+
+// ═══════════════════════════════════════════
+// STATE RENDERERS
+// ═══════════════════════════════════════════
+
+function renderPeek(f, t, pt) {
+  const C = FC.red;
+  let offsetY=0, bounce=0, eyes='forward';
+
+  if (pt < 0.45) {
+    offsetY = lerp(24, 0, easeOut(pt/0.45));
+  } else if (pt < 0.7) {
+    const p = (pt-0.45)/0.25;
+    bounce = Math.sin(p*Math.PI*3)*(1-p)*2;
+    eyes = p<0.2 ? 'blink' : p<0.4 ? 'happy' : 'forward';
+  } else {
+    bounce = Math.sin(pt*Math.PI*2)*0.3;
+    eyes = 'forward';
+  }
+
+  drawFlame(FX, FY, {
+    color:'red', eyes, mouth: pt>0.6?'smile':'neutral',
+    flicker:f, bounce:Math.round(bounce), offsetY:Math.round(offsetY),
+  });
+
+  if(pt<0.45 && f%4===0) addP(FX-3+Math.random()*7, FY+12+Math.round(offsetY), C.spark);
+  if(pt>0.5 && pt<0.7 && f%5===0) addP(FX-5+Math.random()*11, FY-10, C.spark);
+  tickP();
+}
+
+function renderLook(f, t, pt) {
+  const cycle = (pt*4)%4;
+  let eyes='forward', tilt=0;
+  if(cycle<1){const p=cycle;eyes=p<0.3?'forward':'left';tilt=p<0.3?0:lerp(0,-1.2,easeOut(Math.min(1,(p-0.3)/0.4)));}
+  else if(cycle<2){const p=cycle-1;eyes=p<0.5?'left':'forward';tilt=lerp(-1.2,0,easeInOut(p));}
+  else if(cycle<3){const p=cycle-2;eyes=p<0.3?'forward':'right';tilt=p<0.3?0:lerp(0,1.2,easeOut(Math.min(1,(p-0.3)/0.4)));}
+  else{const p=cycle-3;eyes=p<0.5?'right':'forward';tilt=lerp(1.2,0,easeInOut(p));}
+
+  drawFlame(FX, FY, {color:'green', eyes, mouth:'neutral', flicker:f, tilt:Math.round(tilt*10)/10});
+  if(Math.sin(f*0.05+1)>0.95) drawFlameEyes(FX+Math.round(tilt), FY-3, 'blink');
+  tickP();
+}
+
+function renderThink(f, t, pt) {
+  const C = FC.blue;
+  const eyes = Math.sin(f*0.04)>0.9?'blink':'up';
+  const tilt = Math.sin(f*0.08)*0.6;
+  const dotCount = Math.floor((pt*3)%4);
+
+  drawFlame(FX, FY, {color:'blue', eyes, mouth:'small', flicker:f, tilt:Math.round(tilt*10)/10});
+  drawDots(FX-1, FY-16, dotCount+1, 0.5+Math.sin(f*0.1)*0.3);
+  if(f%15<3&&pt>0.2) addP(FX-3+Math.random()*7, FY-10, C.spark);
+  tickP();
+}
+
+function renderHappy(f, t, pt) {
+  const C = FC.pink;
+  const bounce = Math.sin(pt*Math.PI*5)*1.5;
+
+  drawFlame(FX, FY, {color:'pink', eyes:'happy', mouth:'smile', flicker:f, bounce:Math.round(bounce)});
+
+  if(pt>0.15){
+    const h1y=FY-10-Math.round(Math.sin(f*0.1)*3);
+    ctx.globalAlpha=Math.max(0.3,Math.sin(pt*Math.PI));
+    drawHeartPixel(FX+11, h1y, C.core);
+    if(pt>0.4) drawHeartPixel(FX-12, FY-8-Math.round(Math.sin(f*0.08)*2), C.mid);
+    ctx.globalAlpha=1;
+  }
+  if(f%6===0){addP(FX-5+Math.random()*11,FY-10+Math.random()*3,C.spark);addP(FX-5+Math.random()*11,FY-10+Math.random()*3,C.mid);}
+  tickP();
+}
+
+function renderAnswer(f, t, pt) {
+  const mouthOpen = Math.sin(f*0.5)>0;
+  drawFlame(FX, FY, {
+    color:'red',
+    eyes: Math.sin(f*0.05)>0.93?'blink':'forward',
+    mouth: mouthOpen?'open':'neutral', flicker:f,
+  });
+  if(pt>0.1) drawBubble(FX+11, FY-16, '.'.repeat(Math.floor(f/10)%4)||' ');
+  if(f%12===0) addP(FX+Math.random()*6-3, FY-10, FC.red.core);
+  tickP();
+}
+
+function renderConfused(f, t, pt) {
+  const C = FC.blue;
+  const tilt = Math.sin(f*0.1)*1.5;
+  const wobble = Math.round(Math.sin(f*0.2)*0.5);
+  const eyes = Math.sin(f*0.08)>0.85?'blink':'wide';
+
+  drawFlame(FX, FY+wobble, {color:'blue', eyes, mouth:'o', flicker:f, tilt:Math.round(tilt*10)/10});
+
+  if(Math.sin(f*0.1)>-0.3){
+    ctx.globalAlpha=0.6+Math.sin(f*0.15)*0.3;
+    drawQuestion(FX-8,FY-16);if(pt>0.3) drawQuestion(FX+10,FY-14);
+    ctx.globalAlpha=1;
+  }
+  if(f%30<5){const sy=FY-2+Math.round((f%30)/5*2);px(FX+9,sy,'#88BBDD');px(FX+9,sy+1,'#88BBDD');}
+  tickP();
+}
+
+// ═══════════════════════════════════════════
+// RENDER LOOP
+// ═══════════════════════════════════════════
+const RENDERERS = {peek:renderPeek,look:renderLook,think:renderThink,happy:renderHappy,answer:renderAnswer,confused:renderConfused};
+
+function render(f) {
+  const dur=STATE_DUR[currentState], total=FPS*dur, t=f/total, pt=((t%1)+1)%1;
+  drawBg(f);
+  const renderer=RENDERERS[currentState];
+  if(renderer) renderer(f,t,pt);
+}
+
+let startTime=null;
+function loop(ts){
+  if(!startTime)startTime=ts;
+  const elapsed=(ts-startTime)/1000;
+  const dur=STATE_DUR[currentState], loopSec=elapsed%dur, frame=Math.floor(loopSec*FPS);
+  if(loopSec<0.05)particles=[];
+  render(frame);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// ═══════════════════════════════════════════
+// MINI CANVAS
+// ═══════════════════════════════════════════
+const miniCv=document.getElementById('miniC'), miniCtx=miniCv.getContext('2d');
+function renderMini(){miniCtx.clearRect(0,0,720,720);miniCtx.drawImage(cv,0,0);requestAnimationFrame(renderMini);}
+requestAnimationFrame(renderMini);
+
+// ═══════════════════════════════════════════
+// CHAT DEMO
+// ═══════════════════════════════════════════
+const chatMsgs=[
+  {role:'user',text:'帮我查一下 Transformer 的注意力机制原理'},
+  {role:'ai',text:'好的，让我想想... Transformer 的核心是自注意力（Self-Attention）机制...'},
+  {role:'ai',text:'Attention(Q,K,V) = softmax(QK\u1d40/\u221ad)V'},
+];
+let chatIdx=0;
+function simulateChat(){
+  if(chatIdx>=chatMsgs.length){setState('happy');return;}
+  const msg=chatMsgs[chatIdx];
+  if(msg.role==='user'){
+    setState('look');document.getElementById('chatMsg').textContent=msg.text;
+    document.getElementById('chatMsg').className='chat-bubble user';chatIdx++;setTimeout(simulateChat,2000);
+  } else {
+    setState('think');
+    setTimeout(()=>{setState('answer');document.getElementById('chatMsg').textContent=msg.text;
+      document.getElementById('chatMsg').className='chat-bubble';chatIdx++;setTimeout(simulateChat,3000);},1500);
+  }
+}
+setTimeout(()=>{setState('look');setTimeout(simulateChat,3000);},3000);
+
+// ═══════════════════════════════════════════
+// PUBLIC API
+// ═══════════════════════════════════════════
+let idleTimer=null;
+const _setState=setState;
+setState=function(name){
+  _setState(name);clearTimeout(idleTimer);
+  if(name==='happy'||name==='confused')idleTimer=setTimeout(()=>setState('look'),STATE_DUR[name]*1000);
+};
+window.flammeSetState=setState;
+</script>
+</body>
+</html>

@@ -56,24 +56,20 @@ cp .env.example .env
 
 ```bash
 # PDF → Markdown（MinerU 云端解析，支持表格/公式）
-python scripts/ingest.py "论文.pdf" --level pro
+llm-wiki ingest "论文.pdf" --level pro
 
 # PPTX → Markdown（本地 python-pptx 提取）
-python scripts/ingest.py "课件.pptx" --level lite
+llm-wiki ingest "课件.pptx" --level lite
 
 # PPTX 额外转 PDF 用 MinerU 解析（需安装 PowerPoint）
-python scripts/ingest.py "课件.pptx" --level lite --ppt2pdf
+llm-wiki ingest "课件.pptx" --level lite --ppt2pdf
 ```
 
 ### 2. 实体提取
 
 ```bash
 # jieba + LLM 三阶段管线（高质量）
-python scripts/entity_builder.py "pro/人工智能导论"
-
-# 或纯 LLM 提取
-python scripts/entity_extract.py "pro/人工智能导论" --output entities.json
-python scripts/wiki_entity.py generate entities.json
+llm-wiki entity-build "pro/人工智能导论"
 ```
 
 ### 3. 同步索引
@@ -124,10 +120,11 @@ API 端点：
 ### 6. 维护
 
 ```bash
-python scripts/tag_notes.py "pro/人工智能导论"   # LLM 自动标签
-python scripts/wiki_fix.py --lint                # 健康检查
-python scripts/wiki_fix.py --fix-related         # 修复 wikilink 格式
-python scripts/wiki_fix.py --rebuild-index       # 重建索引
+llm-wiki tag "pro/人工智能导论"              # LLM 自动标签
+llm-wiki fix --lint                           # 健康检查
+llm-wiki fix --fix-related                    # 修复 wikilink 格式
+llm-wiki fix --rebuild-index                  # 重建索引
+llm-wiki fix --check-fm                       # 检查 frontmatter
 ```
 
 ## 三级处理规则

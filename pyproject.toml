@@ -25,6 +25,10 @@ dependencies = [
 dev = [
     "pytest>=7.0",
 ]
+ingest = [
+    "python-pptx>=0.6",
+    "jieba>=0.42",
+]
 
 [project.scripts]
 llm-wiki = "src.main:main"

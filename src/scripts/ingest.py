@@ -19,7 +19,8 @@ from pathlib import Path
 # 确保 UTF-8 输出 + 禁用缓冲（管道/后台时也能看到进度）
 sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)
 
-from flamme_paths import VAULT, converted_dir
+from src.scripts import VAULT
+from src.tools.paths import converted_dir
 
 
 # ── PPT → PDF (Windows, via PowerPoint COM) ──────────────────────────
@@ -132,11 +133,15 @@ def pptx_to_markdown(pptx_path: Path) -> str:
 
 def pdf_to_markdown(pdf_path: Path) -> str:
     """用 MinerU 云端 API 解析 PDF 为 Markdown"""
-    from mineru_client import parse_file
-    md = parse_file(str(pdf_path))
-    if md is None:
-        raise RuntimeError(f"MinerU 解析失败: {pdf_path.name}")
-    return md
+    from src.tools.pdf_parser import PDFParserTool
+    token = os.environ.get("MINERU_API_TOKEN", "")
+    if not token:
+        raise RuntimeError("MINERU_API_TOKEN 未配置")
+    tool = PDFParserTool(api_token=token)
+    result = tool.execute({"path": str(pdf_path)})
+    if result.is_error:
+        raise RuntimeError(f"MinerU 解析失败: {result.error}")
+    return result.data["markdown"]
 
 
 # ── Frontmatter ────────────────────────────────────────────────────

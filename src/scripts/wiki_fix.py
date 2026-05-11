@@ -18,7 +18,7 @@ from pathlib import Path
 
 sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)
 
-from flamme_paths import VAULT, all_flamme_dirs, entities_dir, topics_dir
+from src.scripts import VAULT, all_flamme_dirs, entities_dir, topics_dir
 
 INDEX = VAULT / "index.md"
 LOG = VAULT / "log.md"

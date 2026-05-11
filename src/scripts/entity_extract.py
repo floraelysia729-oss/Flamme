@@ -19,7 +19,7 @@ from pathlib import Path
 
 sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)
 
-from flamme_paths import VAULT, all_entity_files, all_flamme_dirs
+from src.scripts import VAULT, all_entity_files, all_flamme_dirs
 MAX_CONTENT_CHARS = 12000
 
 SYSTEM_PROMPT = """你是知识管理助手。从给定笔记中提取核心实体（概念、算法、定理、框架、人物、模型）。

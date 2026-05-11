@@ -35,7 +35,7 @@ from pathlib import Path
 
 sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)
 
-from flamme_paths import VAULT, entities_dir, source_dir_from_vault_rel
+from src.scripts import VAULT, entities_dir, source_dir_from_vault_rel
 
 ENTITY_TEMPLATE = """---
 title: "{title}"

@@ -25,11 +25,11 @@ from pathlib import Path
 
 sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)
 
-from flamme_paths import (
+from src.scripts import (
     VAULT, all_entity_files, all_flamme_dirs,
     entities_dir, converted_dir, source_dir_for_path,
 )
-from llm_utils import get_client, call_llm, strip_frontmatter, extract_title
+from src.scripts.llm_utils import get_client, call_llm, strip_frontmatter, extract_title
 
 # ── 常量 ─────────────────────────────────────────────────────────────
 

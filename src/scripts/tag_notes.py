@@ -19,7 +19,7 @@ from pathlib import Path
 
 sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)
 
-from flamme_paths import VAULT
+from src.scripts import VAULT
 
 
 # ── 标签词频收集 ──────────────────────────────────────────────────────

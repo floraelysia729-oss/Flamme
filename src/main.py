@@ -145,6 +145,28 @@ def main():
     sync_parser.add_argument("--graph", action="store_true", help="同时重建知识图谱")
     sync_parser.add_argument("--vault", help="Vault 路径 (覆盖自动检测)")
 
+    # --- entity-build (jieba + LLM) ---
+    eb_parser = subparsers.add_parser("entity-build", help="jieba + LLM 三阶段实体构建")
+    eb_parser.add_argument("source", help="源目录（如 pro/人工智能导论）")
+    eb_parser.add_argument("--dry-run", action="store_true", help="只预览不写入")
+    eb_parser.add_argument("--vault", help="Vault 路径 (覆盖自动检测)")
+
+    # --- tag ---
+    tag_parser = subparsers.add_parser("tag", help="LLM 自动标签补全")
+    tag_parser.add_argument("source", help="目录（如 pro/矩阵论）")
+    tag_parser.add_argument("--min-tags", type=int, default=3, help="最少标签数阈值 (默认 3)")
+    tag_parser.add_argument("--force", action="store_true", help="强制重新标记")
+    tag_parser.add_argument("--dry-run", action="store_true", help="只预览不写入")
+    tag_parser.add_argument("--vault", help="Vault 路径 (覆盖自动检测)")
+
+    # --- fix ---
+    fix_parser = subparsers.add_parser("fix", help="Wiki 维护操作")
+    fix_parser.add_argument("--lint", action="store_true", help="健康检查（孤立页面、缺失引用）")
+    fix_parser.add_argument("--fix-related", action="store_true", help="修复 related 为 [[wikilink]] 格式")
+    fix_parser.add_argument("--rebuild-index", action="store_true", help="重建 index.md")
+    fix_parser.add_argument("--check-fm", action="store_true", help="检查 frontmatter 完整性")
+    fix_parser.add_argument("--vault", help="Vault 路径 (覆盖自动检测)")
+
     # --- 全局 --workers 参数 ---
     parser.add_argument("--workers", type=int, default=1, help="Worker 并发数 (默认 1=单 Agent)")
 
@@ -247,6 +269,23 @@ def main():
             if args.graph:
                 print("\nRebuilding graph...")
                 print(agent.run("graph build"))
+
+        elif args.command == "entity-build":
+            from src.scripts.entity_builder import build_from_directory
+            build_from_directory(args.source, dry_run=args.dry_run)
+
+        elif args.command == "tag":
+            from src.scripts.tag_notes import main as tag_main
+            tag_main(args.source, min_tags=args.min_tags, force=args.force, dry_run=args.dry_run)
+
+        elif args.command == "fix":
+            from src.scripts.wiki_fix import main as fix_main
+            fix_main(
+                lint=args.lint,
+                fix_related=args.fix_related,
+                rebuild_index=args.rebuild_index,
+                check_fm=args.check_fm,
+            )
 
     except Exception as e:
         import traceback

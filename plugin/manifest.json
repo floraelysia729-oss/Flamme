@@ -1,0 +1,9 @@
+{
+  "id": "flamme",
+  "name": "Flamme",
+  "version": "2.0.0",
+  "minAppVersion": "1.5.0",
+  "description": "LLM-powered knowledge base chat, graph visualization, and document navigation",
+  "author": "llm-wiki",
+  "isDesktopOnly": true
+}

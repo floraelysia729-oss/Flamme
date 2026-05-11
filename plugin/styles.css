@@ -1,0 +1,619 @@
+/* Flamme plugin — pixel-art theme (follows Obsidian theme) */
+
+/* ─── KaTeX: loaded programmatically in main.ts, hide import ─── */
+
+/* Force-hide MathML layer */
+.katex-mathml {
+  position: absolute !important;
+  clip: rect(1px, 1px, 1px, 1px) !important;
+  clip-path: inset(50%) !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+  border: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+/* ─── Pixel font ─── */
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+/* ─── Custom properties: derived from Obsidian theme vars ─── */
+.flamme-chat {
+  --flamme-bg: var(--background-primary);
+  --flamme-bg-surface: var(--background-secondary);
+  --flamme-bg-card: var(--background-primary-alt, var(--background-secondary));
+  --flamme-border: var(--background-modifier-border);
+  --flamme-accent: var(--interactive-accent);
+  --flamme-accent-hover: var(--interactive-accent-hover, var(--interactive-accent));
+  --flamme-text: var(--text-normal);
+  --flamme-text-dim: var(--text-muted);
+  --flamme-text-faint: var(--text-faint);
+  --flamme-font-pixel: 'Press Start 2P', 'Courier New', monospace;
+  --flamme-font-body: var(--font-monospace), 'Courier New', monospace;
+  --flamme-radius: 4px;
+}
+
+/* ─── Chat container ─── */
+.flamme-chat {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--flamme-bg) !important;
+  color: var(--flamme-text);
+  font-family: var(--flamme-font-body);
+}
+
+/* ─── Header ─── */
+.flamme-header {
+  padding: 10px 16px;
+  border-bottom: 2px solid var(--flamme-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+  background: var(--flamme-bg-surface);
+}
+
+.flamme-header-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.flamme-header-text {
+  font-family: var(--flamme-font-pixel);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--flamme-text);
+  letter-spacing: 1px;
+}
+
+.flamme-header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* ─── Pixel buttons (header) ─── */
+.flamme-pixel-btn {
+  font-family: var(--flamme-font-pixel);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 8px 14px;
+  border: 2px solid var(--flamme-accent);
+  border-radius: var(--flamme-radius);
+  background: transparent;
+  color: var(--flamme-accent);
+  cursor: pointer;
+  letter-spacing: 1px;
+  box-shadow: 3px 3px 0px rgba(0,0,0,0.15);
+  transition: background 0.1s, color 0.1s, box-shadow 0.1s, transform 0.1s;
+  text-transform: uppercase;
+}
+
+.flamme-pixel-btn:hover {
+  background: var(--flamme-accent);
+  color: var(--text-on-accent, #fff);
+  box-shadow: 1px 1px 0px rgba(0,0,0,0.15);
+  transform: translate(2px, 2px);
+}
+
+.flamme-pixel-btn.active {
+  background: var(--flamme-accent);
+  color: var(--text-on-accent, #fff);
+  box-shadow: 1px 1px 0px rgba(0,0,0,0.15);
+}
+
+/* ─── Mode slider ─── */
+.flamme-mode-slider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.flamme-mode-label {
+  font-family: var(--flamme-font-pixel);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--flamme-text-faint);
+  transition: color 0.2s;
+}
+
+.flamme-mode-label.active {
+  color: var(--flamme-accent);
+}
+
+.flamme-mode-track {
+  width: 36px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--flamme-border);
+  border: 2px solid var(--flamme-border);
+  position: relative;
+  transition: background 0.2s;
+  box-shadow: inset 1px 1px 0px rgba(0,0,0,0.15);
+}
+
+.flamme-mode-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 6px;
+  background: var(--flamme-accent);
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  transition: left 0.2s;
+  box-shadow: 1px 1px 0px rgba(0,0,0,0.2);
+}
+
+.flamme-mode-thumb.right {
+  left: 19px;
+}
+
+/* ─── Message list area ─── */
+.flamme-messages-area {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px 20px;
+  background: var(--flamme-bg);
+}
+
+.flamme-messages-area::-webkit-scrollbar {
+  width: 6px;
+}
+.flamme-messages-area::-webkit-scrollbar-track {
+  background: var(--flamme-bg);
+}
+.flamme-messages-area::-webkit-scrollbar-thumb {
+  background: var(--flamme-border);
+  border-radius: 3px;
+}
+.flamme-messages-area::-webkit-scrollbar-thumb:hover {
+  background: var(--flamme-accent);
+}
+
+.flamme-empty-state {
+  text-align: center;
+  color: var(--flamme-text-dim);
+  padding-top: 80px;
+  font-family: var(--flamme-font-pixel);
+}
+
+.flamme-empty-state p:first-child {
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 12px;
+  color: var(--flamme-text);
+}
+
+.flamme-empty-state p:last-child {
+  font-size: 10px;
+  line-height: 1.8;
+}
+
+/* ─── Message rows ─── */
+.flamme-msg-row {
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.flamme-msg-row.user {
+  align-items: flex-end;
+}
+
+.flamme-msg-row.assistant {
+  align-items: flex-start;
+}
+
+/* ─── Assistant message with avatar ─── */
+.flamme-assistant-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.flamme-avatar-col {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.flamme-msg-avatar {
+  width: 96px;
+  height: 96px;
+  border-radius: var(--flamme-radius);
+  overflow: hidden;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.flamme-avatar-label {
+  font-family: var(--flamme-font-pixel);
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--flamme-text-dim);
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+/* ─── Tool call badges ─── */
+.flamme-tool-badges {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.flamme-tool-badge {
+  font-family: var(--flamme-font-pixel);
+  font-size: 9px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: var(--flamme-radius);
+  background: var(--flamme-bg-card);
+  color: var(--flamme-text-dim);
+  border: 1px solid var(--flamme-border);
+  letter-spacing: 0.5px;
+}
+
+/* ─── Message bubbles ─── */
+.flamme-bubble {
+  padding: 10px 14px;
+  border-radius: var(--flamme-radius);
+  line-height: 1.7;
+  min-width: 0;
+  overflow-x: auto;
+  font-family: var(--flamme-font-body);
+  font-size: 14px;
+  box-shadow: 4px 4px 0px rgba(0,0,0,0.12);
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.flamme-bubble.user {
+  max-width: 70%;
+  background: color-mix(in srgb, var(--interactive-accent) 35%, var(--background-secondary));
+  color: var(--flamme-text);
+  border: 2px solid color-mix(in srgb, var(--interactive-accent) 50%, var(--background-modifier-border));
+}
+
+.flamme-bubble.assistant {
+  max-width: calc(100% - 116px);
+  background: var(--flamme-bg-card);
+  color: var(--flamme-text);
+  border: 2px solid var(--flamme-border);
+}
+
+/* ─── Colored text within assistant messages ─── */
+.flamme-message-content {
+  cursor: default;
+  font-family: var(--font-text), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.flamme-message-content strong,
+.flamme-message-content b {
+  color: var(--flamme-accent);
+}
+
+.flamme-message-content em,
+.flamme-message-content i {
+  color: var(--flamme-text-dim);
+}
+
+.flamme-message-content code {
+  background: var(--flamme-bg);
+  border: 1px solid var(--flamme-border);
+  border-radius: 2px;
+  padding: 1px 4px;
+  font-size: 13px;
+  color: var(--flamme-accent);
+}
+
+.flamme-message-content pre {
+  background: var(--flamme-bg);
+  border: 2px solid var(--flamme-border);
+  border-radius: var(--flamme-radius);
+  padding: 10px 12px;
+  overflow-x: auto;
+  margin: 8px 0;
+  box-shadow: 3px 3px 0px rgba(0,0,0,0.12);
+}
+
+.flamme-message-content pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+.flamme-message-content h1,
+.flamme-message-content h2,
+.flamme-message-content h3,
+.flamme-message-content h4 {
+  color: var(--flamme-accent);
+  font-family: var(--font-text), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  margin: 12px 0 6px;
+  letter-spacing: 0;
+}
+
+.flamme-message-content ul,
+.flamme-message-content ol {
+  padding-left: 20px;
+  margin: 4px 0;
+}
+
+.flamme-message-content li {
+  margin: 2px 0;
+}
+
+.flamme-message-content a {
+  color: var(--flamme-accent);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+}
+
+.flamme-message-content blockquote {
+  border-left: 3px solid var(--flamme-accent);
+  padding-left: 10px;
+  margin: 6px 0;
+  color: var(--flamme-text-dim);
+}
+
+.flamme-message-content table {
+  border-collapse: collapse;
+  margin: 8px 0;
+  width: 100%;
+}
+
+.flamme-message-content th,
+.flamme-message-content td {
+  border: 1px solid var(--flamme-border);
+  padding: 4px 8px;
+  font-size: 13px;
+}
+
+.flamme-message-content th {
+  background: var(--flamme-bg-surface);
+  color: var(--flamme-accent);
+  font-family: var(--font-text), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+/* ─── Suggested question buttons ─── */
+.flamme-suggestions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  max-width: 90%;
+}
+
+.flamme-suggestion {
+  font-family: var(--flamme-font-body);
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: var(--flamme-radius);
+  border: 1px solid var(--flamme-border);
+  background: var(--flamme-bg-card);
+  color: var(--flamme-text);
+  cursor: pointer;
+  box-shadow: 2px 2px 0px rgba(0,0,0,0.1);
+  transition: background 0.1s, border-color 0.1s, transform 0.1s, box-shadow 0.1s;
+}
+
+.flamme-suggestion:hover {
+  background: var(--flamme-bg-surface);
+  border-color: var(--flamme-accent);
+  color: var(--flamme-accent);
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0px rgba(0,0,0,0.1);
+}
+
+.flamme-suggestion:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ─── Message stats ─── */
+.flamme-msg-stats {
+  font-family: var(--flamme-font-body);
+  font-size: 11px;
+  color: var(--flamme-text-faint);
+  margin-top: 4px;
+}
+
+/* ─── Streaming indicator ─── */
+.flamme-thinking {
+  font-family: var(--flamme-font-pixel);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--flamme-text-dim);
+  text-align: center;
+  padding: 6px 0;
+  letter-spacing: 1px;
+}
+
+/* ─── Input area ─── */
+.flamme-input-bar {
+  padding: 20px 16px 28px;
+  border-top: 2px solid var(--flamme-border);
+  flex-shrink: 0;
+  background: var(--flamme-bg-surface);
+}
+
+.flamme-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.flamme-chat input[type="text"] {
+  flex: 1;
+  padding: 14px 16px;
+  border-radius: var(--flamme-radius);
+  border: 2px solid var(--flamme-border);
+  outline: none;
+  font-size: 14px;
+  font-weight: 500;
+  background: var(--flamme-bg);
+  color: var(--flamme-text);
+  font-family: var(--flamme-font-body);
+  box-shadow: inset 2px 2px 0px rgba(0,0,0,0.08);
+  transition: border-color 0.15s;
+}
+
+.flamme-chat input[type="text"]::placeholder {
+  color: var(--flamme-text-faint);
+  font-size: 13px;
+}
+
+.flamme-chat input[type="text"]:focus {
+  outline: none;
+  border-color: var(--flamme-accent);
+}
+
+.flamme-send-btn {
+  padding: 14px 22px;
+  border-radius: var(--flamme-radius);
+  border: 2px solid var(--flamme-accent);
+  background: var(--flamme-accent);
+  color: var(--text-on-accent, #fff);
+  font-family: var(--flamme-font-pixel);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  min-width: 80px;
+  letter-spacing: 1px;
+  box-shadow: 3px 3px 0px rgba(0,0,0,0.15);
+  transition: transform 0.1s, box-shadow 0.1s, background 0.1s;
+}
+
+.flamme-send-btn:hover {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0px rgba(0,0,0,0.15);
+}
+
+.flamme-send-btn.streaming {
+  background: #c04a28;
+  border-color: #c04a28;
+  color: #fff;
+}
+
+/* ─── Wikilink ─── */
+.flamme-wikilink {
+  color: var(--flamme-accent);
+  cursor: pointer;
+  border-bottom: 1px dotted var(--flamme-accent);
+  padding: 0 2px;
+}
+
+.flamme-wikilink:hover {
+  border-bottom-style: solid;
+}
+
+/* ─── Math blocks ─── */
+.flamme-math-block {
+  margin: 8px 0;
+}
+
+.flamme-math-block .katex,
+.flamme-math-inline .katex {
+  font-size: 1.05em;
+  font-family: KaTeX_Main, 'Times New Roman', serif;
+}
+
+.flamme-math-error {
+  color: #e53e3e;
+}
+
+/* ─── Graph container ─── */
+.flamme-graph-container {
+  display: flex;
+  height: 100%;
+}
+
+.flamme-graph-area {
+  flex: 1;
+  position: relative;
+}
+
+.flamme-toolbar {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 10;
+  display: flex;
+  gap: 8px;
+}
+
+.flamme-detail-panel {
+  width: 280px;
+  padding: 16px;
+  background: var(--background-secondary);
+  border-left: 2px solid var(--background-modifier-border);
+  overflow: auto;
+}
+
+.flamme-detail-panel h3 {
+  font-family: var(--flamme-font-pixel);
+  font-size: 10px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: var(--interactive-accent);
+  letter-spacing: 1px;
+}
+
+.flamme-detail-panel p {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 4px 0;
+}
+
+.flamme-detail-panel button {
+  width: 100%;
+  padding: 6px 12px;
+  border-radius: var(--flamme-radius);
+  border: 2px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 12px;
+  cursor: pointer;
+  font-family: var(--flamme-font-body);
+  box-shadow: 2px 2px 0px rgba(0,0,0,0.1);
+}
+
+/* ─── Scanline overlay (subtle CRT pixel feel) ─── */
+.flamme-chat::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.03) 2px,
+    rgba(0,0,0,0.03) 4px
+  );
+  z-index: 999;
+}

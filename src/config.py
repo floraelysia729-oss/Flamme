@@ -154,3 +154,28 @@ def load_config(**overrides) -> Config:
         if v is not None and hasattr(cfg, k):
             setattr(cfg, k, v)
     return cfg
+
+
+def config_from_headers(headers: dict, base_cfg: Config | None = None) -> Config:
+    """从插件请求 headers 构建 Config（用户自带 key 模式）
+
+    插件通过 X-LLM-Key / X-Embed-Key / X-Brain-Key / X-MinerU-Token 传入 API key，
+    其他配置继承 .env 或默认值。
+    """
+    if base_cfg is None:
+        base_cfg = load_config()
+
+    overrides = {}
+    if headers.get("x-llm-key"):
+        overrides["llm_api_key"] = headers["x-llm-key"]
+    if headers.get("x-embed-key"):
+        overrides["embed_api_key"] = headers["x-embed-key"]
+    if headers.get("x-brain-key"):
+        overrides["brain_api_key"] = headers["x-brain-key"]
+    if headers.get("x-mineru-token"):
+        overrides["mineru_api_token"] = headers["x-mineru-token"]
+
+    if not overrides:
+        return base_cfg
+
+    return load_config(**overrides)

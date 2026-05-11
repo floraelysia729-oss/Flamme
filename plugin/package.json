@@ -1,0 +1,23 @@
+{
+  "name": "flamme",
+  "version": "2.0.0",
+  "description": "LLM-WIKI knowledge base assistant for Obsidian",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "node esbuild.config.mjs production"
+  },
+  "devDependencies": {
+    "builtin-modules": "^4.0.0",
+    "esbuild": "^0.24.0",
+    "esbuild-svelte": "^0.9.0",
+    "obsidian": "latest",
+    "svelte": "^5.0.0",
+    "svelte-preprocess": "^6.0.0",
+    "typescript": "^5.7.0"
+  },
+  "dependencies": {
+    "katex": "^0.16.0",
+    "marked": "^15.0.0"
+  }
+}

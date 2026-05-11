@@ -14,7 +14,7 @@ venv/
 .pytest_cache/
 
 # Node
-flamme/node_modules/
+plugin/node_modules/
 
 # IDE
 .vscode/

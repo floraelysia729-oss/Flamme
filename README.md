@@ -35,7 +35,6 @@ npm install
 
 - Python >= 3.10
 - Node.js >= 18
-- OCR 服务（可选）：[UmiOCR](https://github.com/hiroi-sora/UmiOCR)，启动后默认监听 `localhost:1224`
 
 ## 配置
 
@@ -56,12 +55,14 @@ cp .env.example .env
 ### 1. 摄入文档
 
 ```bash
-# PDF/PPTX → Markdown（本地解析）
-python scripts/ingest.py "课件.pptx" --level lite
+# PDF → Markdown（MinerU 云端解析，支持表格/公式）
 python scripts/ingest.py "论文.pdf" --level pro
 
-# 批量 OCR 薄页
-python scripts/batch_ocr.py "pro/人工智能导论"
+# PPTX → Markdown（本地 python-pptx 提取）
+python scripts/ingest.py "课件.pptx" --level lite
+
+# PPTX 额外转 PDF 用 MinerU 解析（需安装 PowerPoint）
+python scripts/ingest.py "课件.pptx" --level lite --ppt2pdf
 ```
 
 ### 2. 实体提取

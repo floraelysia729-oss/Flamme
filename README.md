@@ -2,7 +2,7 @@
 
 LLM 驱动的 Obsidian 知识库插件 — 智能摄入、语义检索、知识图谱。
 
-> **隐私设计**：你的笔记文件始终留在本地 vault，从不上传到云端。后端仅作为 LLM API 的中转服务，用你自己的 API Key 调用各供应商。
+> **隐私设计**：你的笔记文件始终留在本地 vault，从不上传。后端仅用你提供的 API Key 转发请求到 LLM 供应商，不存用户数据。
 
 ## 安装插件
 
@@ -27,10 +27,10 @@ your-vault/
 打开 Flamme 设置页：
 
 **连接**
-- **Backend URL** — 后端地址（云端或本地）
-- **Test Connection** — 检查后端是否可达
+- **Backend URL** — `http://120.26.21.155:8765`（已部署的云端后端）
+- **Test Connection** — 验证连通
 
-**API Keys**（自带 Key 模式）
+**API Keys**（填入你自己的 Key）
 
 | Key | 用途 | 推荐供应商 |
 |-----|------|-----------|
@@ -39,7 +39,7 @@ your-vault/
 | Brain API Key | 多 Agent 编排 | 智谱 GLM |
 | MinerU Token | PDF 精准解析 | MinerU |
 
-**本地模式（高级）** — 如需本地运行后端，启用 Auto-start backend 并填写 Python 路径和项目路径。
+不需要自己部署后端，后端已由开发者维护。
 
 ### 3. 使用
 
@@ -66,7 +66,7 @@ python3.11 -m venv venv
 
 ### 环境变量
 
-后端也支持直接配置 API Key（用于自建部署）：
+服务端在 `.env` 中统一配置 LLM API Key：
 
 ```bash
 cp .env.example .env

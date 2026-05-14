@@ -2,6 +2,8 @@
 
 LLM 驱动的 Obsidian 知识库插件 — 智能摄入、语义检索、知识图谱。
 
+> **隐私设计**：你的笔记文件始终留在本地 vault，从不上传到云端。后端仅作为 LLM API 的中转服务，用你自己的 API Key 调用各供应商。
+
 ## 安装插件
 
 ### 1. 安装到 Obsidian
@@ -47,21 +49,20 @@ your-vault/
 
 ## 部署云端后端
 
-### Docker（推荐）
-
 ```bash
 git clone https://github.com/floraelysia729-oss/Flamme.git
 cd Flamme
-pip install -e .
+python3.11 -m venv venv
+./venv/bin/pip install -e .
 ```
 
-启动服务：
+启动服务（生产推荐 gunicorn）：
 
 ```bash
-python -m src.api.app
+./venv/bin/gunicorn -c gunicorn.conf.py src.api.app:app
 ```
 
-默认端口 `8765`。插件 Backend URL 填写 `https://your-domain:8765`。
+默认端口 `8765`。插件 Backend URL 填写 `http://your-server:8765`。
 
 ### 环境变量
 
@@ -82,14 +83,19 @@ cp .env.example .env
 ## 架构
 
 ```
-Obsidian Plugin (Svelte 5)  ←→  Cloud Backend (FastAPI)
-        │                              │
-   vault .md files              SQLite + 向量索引
-   .flamme/ (AI 生成)           知识图谱
-   .wiki/ (索引)                 多 LLM Agent
+  本地 Obsidian Vault                云端后端 (FastAPI)
+  ┌──────────────────┐              ┌──────────────────┐
+  │ plugin (Svelte 5) │─── HTTP ───→│  API 路由         │
+  │   │               │              │   │               │
+  │ vault .md 文件    │              │  调用各 LLM API   │──→ DeepSeek / GLM / DashScope
+  │ .flamme/ (AI生成) │              │  返回处理结果     │
+  │ .wiki/ (索引)     │  ← JSON ────│                   │
+  └──────────────────┘              └──────────────────┘
 ```
 
-**文件是真相来源** — SQLite 和向量只是索引，随时可以从 .md 文件重建。
+- **文件不离开本地** — 所有 .md 文件、SQLite 索引、向量数据都在你的 vault 里
+- **云端不存数据** — 后端只转发请求到 LLM 供应商，不持久化用户内容
+- **文件是真相来源** — SQLite 和向量只是索引，随时可以从 .md 文件重建
 
 ```
 vault/

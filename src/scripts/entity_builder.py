@@ -125,19 +125,21 @@ def _filter_terms(terms: list[str]) -> list[str]:
         filtered.append(t)
     return filtered[:5]
 
-def find_entity_path(term: str) -> Path | None:
+def find_entity_path(term: str, vault_path: Path | None = None) -> Path | None:
     """在全 vault 中查找已有实体文件"""
-    for fd in all_flamme_dirs():
+    vp = vault_path or VAULT
+    for fd in all_flamme_dirs(vp):
         candidate = fd / "entities" / f"{_safe_filename(term)}.md"
         if candidate.exists():
             return candidate
     return None
 
 
-def collect_all_sources() -> list[Path]:
+def collect_all_sources(vault_path: Path | None = None) -> list[Path]:
     """收集全 vault 所有 converted .md 文件"""
+    vp = vault_path or VAULT
     sources = []
-    for fd in all_flamme_dirs():
+    for fd in all_flamme_dirs(vp):
         conv = fd / "converted"
         if conv.exists():
             sources.extend(
@@ -547,8 +549,10 @@ def build_entity_page(term: str, entity_json: dict,
 # ── 核心编排 ────────────────────────────────────────────────────────
 
 def build_from_file(filepath: Path, all_sources: list[Path],
-                    client, dry_run: bool = False) -> list[Path]:
+                    client, vault_path: Path | None = None,
+                    dry_run: bool = False) -> list[Path]:
     """处理单个源文件，返回创建/更新的实体路径列表"""
+    vp = vault_path or VAULT
     filepath = Path(filepath)
     text = filepath.read_text(encoding="utf-8")
     title = extract_title(text) or filepath.stem
@@ -559,7 +563,7 @@ def build_from_file(filepath: Path, all_sources: list[Path],
         return []
 
     source_dir = source_dir_for_path(filepath)
-    existing = all_entity_files()
+    existing = all_entity_files(vp)
 
     # Step 1: 识别术语
     # 清理文本：去掉 markdown 标题标记、幻灯片编号等噪声
@@ -602,7 +606,7 @@ def build_from_file(filepath: Path, all_sources: list[Path],
         source_names = sorted(key_sents.keys())
 
         # 确定写入路径
-        existing_path = find_entity_path(term)
+        existing_path = find_entity_path(term, vp)
         existing_entity_text = None
         existing_fm = None
 
@@ -664,12 +668,13 @@ def build_from_file(filepath: Path, all_sources: list[Path],
     return results
 
 
-def build_from_directory(dirpath: Path, client, dry_run: bool = False,
-                         interval: float = 2.0) -> list[Path]:
+def build_from_directory(dirpath: Path, client, vault_path: Path | None = None,
+                         dry_run: bool = False, interval: float = 2.0) -> list[Path]:
     """处理目录下所有 converted .md 文件"""
+    vp = vault_path or VAULT
     dirpath = Path(dirpath)
     if not dirpath.is_absolute():
-        dirpath = VAULT / dirpath
+        dirpath = vp / dirpath
 
     # 收集当前目录的 converted 文件
     source_dir = dirpath
@@ -683,13 +688,13 @@ def build_from_directory(dirpath: Path, client, dry_run: bool = False,
         return []
 
     # 收集全 vault 源文件（跨目录搜索用）
-    all_sources = collect_all_sources()
+    all_sources = collect_all_sources(vp)
     print(f"Found {len(files)} file(s) to process, {len(all_sources)} total source files\n")
 
     results = []
     for i, f in enumerate(files):
         print(f"[*] {f.name}")
-        created = build_from_file(f, all_sources, client, dry_run)
+        created = build_from_file(f, all_sources, client, vp, dry_run)
         results.extend(created)
         if not dry_run and i < len(files) - 1:
             time.sleep(interval)
@@ -714,16 +719,16 @@ def main():
         print(f"Error: {path} not found")
         sys.exit(1)
 
-    existing = all_entity_files()
+    existing = all_entity_files(VAULT)
     print(f"已有 {len(existing)} 个实体页\n")
 
     client = None if args.dry_run else get_client()
 
     if path.is_dir():
-        results = build_from_directory(path, client, args.dry_run, args.interval)
+        results = build_from_directory(path, client, vault_path=VAULT, dry_run=args.dry_run, interval=args.interval)
     else:
-        all_sources = collect_all_sources()
-        results = build_from_file(path, all_sources, client, args.dry_run)
+        all_sources = collect_all_sources(VAULT)
+        results = build_from_file(path, all_sources, client, vault_path=VAULT, dry_run=args.dry_run)
 
     print(f"\nDone. {len(results)} entity page(s) created/updated.")
 

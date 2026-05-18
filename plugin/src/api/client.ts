@@ -20,7 +20,7 @@ export class ApiClient {
     const headers: Record<string, string> = {};
     if (this.settings.llmApiKey) headers['X-LLM-Key'] = this.settings.llmApiKey;
     if (this.settings.embedApiKey) headers['X-Embed-Key'] = this.settings.embedApiKey;
-    if (this.settings.brainApiKey) headers['X-Brain-Key'] = this.settings.brainApiKey;
+    if (this.settings.llmApiKey) headers['X-Brain-Key'] = this.settings.llmApiKey;
     if (this.settings.mineruApiToken) headers['X-MinerU-Token'] = this.settings.mineruApiToken;
     return headers;
   }

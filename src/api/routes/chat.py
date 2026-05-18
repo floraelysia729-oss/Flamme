@@ -7,11 +7,12 @@ import queue as queue_mod
 import logging
 from typing import Generator
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from src.api.deps import get_config, get_llm, get_brain_llm, get_llm_queue
+from src.api.deps import get_request_config, build_llm_from_config, build_brain_llm_from_config, get_config
+from src.config import Config
 
 
 router = APIRouter()
@@ -26,7 +27,7 @@ class ChatRequest(BaseModel):
     selected_files: list[str] | None = None
 
 
-def _build_thread_orchestrator():
+def _build_thread_orchestrator(cfg: Config, llm, brain_llm):
     """在 producer 线程中构建独立的 Orchestrator（每个线程独立 SQLite 连接）"""
     from src.db.client import SQLiteClient
     from src.db.conversation import ConversationStore
@@ -35,12 +36,10 @@ def _build_thread_orchestrator():
     from src.agent.orchestrator import Orchestrator
     from src.agent.coordinator import Coordinator
     from src.agent.agent import Agent
+    from src.llm.queue import LLMQueue
 
-    cfg = get_config()
-    llm = get_llm()
-    brain_llm = get_brain_llm()
-    queue = get_llm_queue()
     emb = EmbeddingStore(cfg.embeddings_dir, dim=cfg.embed_dim)
+    llm_queue = LLMQueue(max_concurrency=cfg.max_concurrency) if llm else None
 
     # 每个线程独立的 SQLite 连接
     db = SQLiteClient(cfg.db_path, vault_path=cfg.vault_path)
@@ -50,11 +49,11 @@ def _build_thread_orchestrator():
     registry = build_registry(cfg, db, llm=llm, embedding_store=emb)
 
     orchestrator_llm = brain_llm or llm
-    agent = Agent(tools=registry, db=db, llm=llm, embedding_store=emb, llm_queue=queue)
+    agent = Agent(tools=registry, db=db, llm=llm, embedding_store=emb, llm_queue=llm_queue)
     coordinator = Coordinator(
         agent=agent, db=db, tools=registry,
         llm=llm, brain_llm=brain_llm,
-        embedding_store=emb, llm_queue=queue,
+        embedding_store=emb, llm_queue=llm_queue,
     )
     return Orchestrator(
         brain_llm=orchestrator_llm,
@@ -65,18 +64,19 @@ def _build_thread_orchestrator():
     )
 
 
-def _sse_stream(question: str, session_id: str, mode: str = "search",
+def _sse_stream(question: str, session_id: str, cfg: Config,
+                mode: str = "search",
                 selected_files: list[str] | None = None) -> Generator[str, None, None]:
     """生成 SSE 事件流 — producer 线程独立连接"""
     import time
 
-    llm = get_llm()
-    brain_llm = get_brain_llm()
+    llm = build_llm_from_config(cfg)
+    brain_llm = build_brain_llm_from_config(cfg)
     if not (brain_llm or llm):
-        yield f"data: {json.dumps({'type': 'error', 'content': 'LLM 未配置。请在 .env 中设置 LLM_API_KEY 或 BRAIN_API_KEY。'}, ensure_ascii=False)}\n\n"
+        yield f"data: {json.dumps({'type': 'error', 'content': 'LLM 未配置。请在插件设置中填写 API Key。'}, ensure_ascii=False)}\n\n"
         return
     if not brain_llm:
-        yield f"data: {json.dumps({'type': 'error', 'content': 'Orchestrator 需要 BRAIN_API_KEY（GLM 5.1）才能工作。请在 .env 中配置 BRAIN_API_KEY。'}, ensure_ascii=False)}\n\n"
+        yield f"data: {json.dumps({'type': 'error', 'content': 'Orchestrator 需要 Brain API Key。请在插件设置中配置 LLM API Key。'}, ensure_ascii=False)}\n\n"
         return
 
     token_queue = queue_mod.Queue()
@@ -84,7 +84,7 @@ def _sse_stream(question: str, session_id: str, mode: str = "search",
 
     def producer():
         try:
-            orchestrator = _build_thread_orchestrator()
+            orchestrator = _build_thread_orchestrator(cfg, llm, brain_llm)
             for token in orchestrator.chat(session_id, question, mode=mode, selected_files=selected_files):
                 token_queue.put(token)
         except Exception as e:
@@ -126,10 +126,11 @@ def _sse_stream(question: str, session_id: str, mode: str = "search",
 
 
 @router.post("/chat")
-async def chat(req: ChatRequest):
+async def chat(req: ChatRequest, request: Request):
+    cfg = get_request_config(request)
     session_id = req.session_id or str(uuid.uuid4())
     return StreamingResponse(
-        _sse_stream(req.message, session_id, mode=req.mode, selected_files=req.selected_files),
+        _sse_stream(req.message, session_id, cfg, mode=req.mode, selected_files=req.selected_files),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

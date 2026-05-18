@@ -31,29 +31,21 @@ export interface GraphData {
 
 export interface FlammeSettings {
   backendUrl: string;
-  autoStartBackend: boolean;
-  pythonPath: string;
-  backendProjectPath: string;
   defaultChatMode: 'search' | 'learn';
   showToolCalls: boolean;
   maxHistorySessions: number;
   // API Keys（用户自带）
   llmApiKey: string;
   embedApiKey: string;
-  brainApiKey: string;
   mineruApiToken: string;
 }
 
 export const DEFAULT_SETTINGS: FlammeSettings = {
-  backendUrl: 'https://flamme.yourdomain.com',
-  autoStartBackend: false,
-  pythonPath: 'python',
-  backendProjectPath: '',
+  backendUrl: 'http://localhost:8765',
   defaultChatMode: 'search',
   showToolCalls: true,
   maxHistorySessions: 50,
   llmApiKey: '',
   embedApiKey: '',
-  brainApiKey: '',
   mineruApiToken: '',
 };

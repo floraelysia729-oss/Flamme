@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import re
+from pathlib import Path
 
 from src.agent.worker import BaseWorker
 from src.db.client import SQLiteClient
@@ -86,6 +87,9 @@ class IngestWorker(BaseWorker):
         if not markdown:
             return "PDF 解析结果为空"
 
+        # 保存转换内容到 .flamme/converted/
+        saved_to = self._save_converted(path, markdown)
+
         content_hash = self._compute_hash(markdown)
         self._db.put_document({
             "path": path,
@@ -97,7 +101,14 @@ class IngestWorker(BaseWorker):
             "content_hash": content_hash,
         })
         self._auto_embed(path, markdown, content_hash)
-        return f"已导入 PDF: {path} ({len(markdown)} chars)"
+
+        # pro 级：触发实体构建
+        entity_info = ""
+        if level == "pro" and self._llm:
+            entity_count = self._build_entities(saved_to)
+            entity_info = f", {entity_count} 个实体页已创建" if entity_count else ""
+
+        return f"已导入 PDF: {path} ({len(markdown)} chars{entity_info})"
 
     def _handle_excalidraw(self, path: str) -> str:
         tool = self._tools.get("excalidraw_ocr")
@@ -126,6 +137,34 @@ class IngestWorker(BaseWorker):
     @staticmethod
     def _compute_hash(text: str) -> str:
         return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+    def _save_converted(self, path: str, markdown: str) -> Path:
+        """保存 MinerU/PDF 转换结果到 .flamme/converted/{stem}.md"""
+        from src.tools.paths import converted_dir, source_dir_for_path
+        vault = Path(self._db._vault_path)
+        source_dir = source_dir_for_path(vault, Path(path))
+        conv = converted_dir(source_dir)
+        stem = Path(path).stem
+        out = conv / f"{stem}.md"
+        out.write_text(markdown, encoding="utf-8")
+        return out
+
+    def _build_entities(self, converted_path: Path) -> int:
+        """对转换后的 markdown 运行三阶段实体构建管道"""
+        import logging
+        logger = logging.getLogger(__name__)
+        try:
+            from src.scripts.entity_builder import build_from_file, collect_all_sources
+            vault = Path(self._db._vault_path)
+            all_sources = collect_all_sources(vault)
+            # self._llm._client 是 openai.OpenAI 实例，兼容 call_llm()
+            results = build_from_file(converted_path, all_sources, self._llm._client, vault)
+            if results:
+                logger.info("Entity build: %d entities created from %s", len(results), converted_path.name)
+            return len(results)
+        except Exception as e:
+            logger.exception("Entity build failed for %s: %s", converted_path, e)
+            return 0
 
 
 class QueryWorker(BaseWorker):
@@ -352,6 +391,10 @@ class BatchTagWorker(BaseWorker):
         doc_path = payload.get("path", "")
         if not doc_path:
             return "错误: 未指定文件路径"
+
+        # 二进制文件无法写入 frontmatter，跳过
+        if doc_path.lower().endswith((".pdf", ".doc", ".docx", ".ppt", ".pptx")):
+            return f"跳过（二进制文件）: {doc_path}"
 
         # 1. 读文件
         p = __import__("pathlib").Path(doc_path)

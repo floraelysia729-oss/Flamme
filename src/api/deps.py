@@ -1,8 +1,10 @@
-"""FastAPI 依赖注入 — lru_cache 单例"""
+"""FastAPI 依赖注入 — lru_cache 单例 + per-request Config"""
 
 from functools import lru_cache
 
-from src.config import load_config, Config
+from fastapi import Request
+
+from src.config import load_config, config_from_headers, Config
 from src.db.client import SQLiteClient
 from src.tools.bootstrap import build_registry
 from src.tools.registry import ToolRegistry
@@ -76,3 +78,38 @@ def get_llm_queue() -> LLMQueue | None:
     if not llm:
         return None
     return LLMQueue(max_concurrency=get_config().max_concurrency)
+
+
+# ── Per-request: 从插件 header 构建 Config + LLM ──
+
+def get_request_config(request: Request) -> Config:
+    """从请求 header 读取用户 API key，构建 per-request Config"""
+    return config_from_headers(dict(request.headers))
+
+
+def build_llm_from_config(cfg: Config) -> DefaultLLM | None:
+    """从给定 Config 构建 LLM 实例（非缓存）"""
+    if not cfg.llm_api_key:
+        return None
+    return DefaultLLM(
+        api_key=cfg.llm_api_key,
+        base_url=cfg.llm_base_url,
+        model=cfg.llm_model,
+        embed_api_key=cfg.embed_api_key,
+        embed_base_url=cfg.embed_base_url,
+        embed_model=cfg.embed_model,
+    )
+
+
+def build_brain_llm_from_config(cfg: Config) -> DefaultLLM | None:
+    """从给定 Config 构建 Brain LLM 实例（非缓存）"""
+    if not cfg.brain_api_key:
+        return None
+    return DefaultLLM(
+        api_key=cfg.brain_api_key,
+        base_url=cfg.brain_base_url,
+        model=cfg.brain_model,
+        embed_api_key=cfg.embed_api_key,
+        embed_base_url=cfg.embed_base_url,
+        embed_model=cfg.embed_model,
+    )

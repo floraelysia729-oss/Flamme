@@ -289,9 +289,10 @@ SYSTEM_PROMPT = """你是 LLM-WIKI 知识库的 AI 助手。你的职责不仅�
 - 检查整理 → wiki_lint
 - **批量补标签 → wiki_batch_tags（用户提到补标签/缺tags时，必须用此工具！）**
 - **清理脏数据 → wiki_cleanup（action: purge_missing=删除文件缺失记录, purge_graph_noise=清理图谱噪声节点, status=查看统计）**
-- **PDF/Word/PPT 文件 → 直接用 pdf_parse（不要先试 document_ingest！）**
-  pdf_parse 上传到 MinerU 精准解析，支持表格/公式/图片，耗时 30s-5min
-  document_ingest 只能处理纯文本文件（.md 等），对二进制文件会失败
+- **文件摄入/处理 → 统一用 document_ingest（支持 .md、.pdf、.doc、.docx、.ppt、.pptx 所有格式）**
+  document_ingest 会自动识别文件类型：二进制文件调 MinerU 解析，Markdown 直接处理
+  pdf_parse 仅用于"只想查看/预览 PDF 内容"的场景，不会入库
+  用户说"处理"、"导入"、"摄入"文件时 → document_ingest
 
 ## 重要：多任务处理
 当用户一次请求包含多个意图（如"搜索X并做PPT"、"查A和B的区别"）：
@@ -702,6 +703,9 @@ class Orchestrator:
         for doc in docs:
             p = doc["path"]
             if not (p.startswith("pro/") or p.startswith("lite/") or p.startswith("raw/")):
+                continue
+            # 二进制文件无法写入 frontmatter，跳过
+            if p.lower().endswith((".pdf", ".doc", ".docx", ".ppt", ".pptx")):
                 continue
             full_doc = db.get_document(p)
             tags = full_doc.get("tags", []) if full_doc else []

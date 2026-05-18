@@ -74,17 +74,6 @@ export class FlammeSettingTab extends PluginSettingTab {
         }));
 
     new Setting(containerEl)
-      .setName('Brain API Key')
-      .setDesc('多 Agent 编排（智谱 GLM）')
-      .addText(text => text
-        .setPlaceholder('sk-...')
-        .setValue(this.plugin.settings.brainApiKey)
-        .onChange(async (value) => {
-          this.plugin.settings.brainApiKey = value;
-          await this.plugin.saveSettings();
-        }));
-
-    new Setting(containerEl)
       .setName('MinerU Token')
       .setDesc('PDF 精准解析')
       .addText(text => text
@@ -92,41 +81,6 @@ export class FlammeSettingTab extends PluginSettingTab {
         .setValue(this.plugin.settings.mineruApiToken)
         .onChange(async (value) => {
           this.plugin.settings.mineruApiToken = value;
-          await this.plugin.saveSettings();
-        }));
-
-    // ── 本地模式（高级）──
-    containerEl.createEl('h3', { text: '本地模式（高级）' });
-
-    new Setting(containerEl)
-      .setName('Auto-start backend')
-      .setDesc('Obsidian 启动时自动启动本地 Python 后端')
-      .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.autoStartBackend)
-        .onChange(async (value) => {
-          this.plugin.settings.autoStartBackend = value;
-          await this.plugin.saveSettings();
-        }));
-
-    new Setting(containerEl)
-      .setName('Python path')
-      .setDesc('本地 Python 路径')
-      .addText(text => text
-        .setPlaceholder('python')
-        .setValue(this.plugin.settings.pythonPath)
-        .onChange(async (value) => {
-          this.plugin.settings.pythonPath = value;
-          await this.plugin.saveSettings();
-        }));
-
-    new Setting(containerEl)
-      .setName('Backend project path')
-      .setDesc('llm-wiki-2 项目目录（本地模式必填）')
-      .addText(text => text
-        .setPlaceholder('/path/to/llm-wiki-2')
-        .setValue(this.plugin.settings.backendProjectPath)
-        .onChange(async (value) => {
-          this.plugin.settings.backendProjectPath = value;
           await this.plugin.saveSettings();
         }));
 

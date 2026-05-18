@@ -36,10 +36,10 @@ class Config:
     embed_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     embed_model: str = "text-embedding-v3"
     embed_dim: int = 1024
-    # --- Brain LLM (GLM — 多 Agent 编排大脑) ---
+    # --- Brain LLM (DeepSeek — 多 Agent 编排大脑) ---
     brain_api_key: str = ""
-    brain_base_url: str = "https://open.bigmodel.cn/api/paas/v4"
-    brain_model: str = "glm-5.1"
+    brain_base_url: str = "https://api.deepseek.com"
+    brain_model: str = "deepseek-chat"
     # --- MinerU (PDF 精准解析) ---
     mineru_api_token: str = ""
     mineru_model_version: str = "vlm"
@@ -133,10 +133,10 @@ def load_config(**overrides) -> Config:
         embed_base_url=os.environ.get("EMBED_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
         embed_model=os.environ.get("EMBED_MODEL", "text-embedding-v3"),
         embed_dim=int(os.environ.get("EMBED_DIM", "1024")),
-        # Brain (GLM)
+        # Brain (DeepSeek)
         brain_api_key=os.environ.get("BRAIN_API_KEY", os.environ.get("ZHIPU_API_KEY", "")),
-        brain_base_url=os.environ.get("BRAIN_BASE_URL", "https://open.bigmodel.cn/api/paas/v4"),
-        brain_model=os.environ.get("BRAIN_MODEL", "glm-5.1"),
+        brain_base_url=os.environ.get("BRAIN_BASE_URL", "https://api.deepseek.com"),
+        brain_model=os.environ.get("BRAIN_MODEL", "deepseek-chat"),
         # MinerU
         mineru_api_token=os.environ.get("MINERU_API_TOKEN", ""),
         mineru_model_version=os.environ.get("MINERU_MODEL_VERSION", "vlm"),

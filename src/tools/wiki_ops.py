@@ -97,6 +97,25 @@ class WikiReadPageTool(BaseTool):
         doc_path = doc["path"]
         abs_path = self._db.resolve(doc_path)
 
+        # 二进制文件（PDF/Word/PPT）→ 读 .flamme/converted/ 下已转换的 .md
+        if doc_path.lower().endswith((".pdf", ".doc", ".docx", ".ppt", ".pptx")):
+            content = self._read_converted(doc_path)
+            if content is None:
+                return ToolResult.ok({
+                    "title": doc["title"],
+                    "path": doc_path,
+                    "level": doc.get("level", ""),
+                    "tags": doc.get("tags", []),
+                    "content": f"[二进制文件 {doc_path}，尚未转换，请先用 document_ingest 处理]",
+                })
+            return ToolResult.ok({
+                "title": doc["title"],
+                "path": doc_path,
+                "level": doc.get("level", ""),
+                "tags": doc.get("tags", []),
+                "content": content,
+            })
+
         if self._parser:
             result = self._parser.execute({"path": abs_path})
             if result.is_error:
@@ -119,6 +138,21 @@ class WikiReadPageTool(BaseTool):
                 "content": p.read_text(encoding="utf-8")[:8000],
             })
         return ToolResult.err(f"文件不存在: {abs_path}")
+
+    def _read_converted(self, doc_path: str) -> str | None:
+        """读取二进制文件对应的 .flamme/converted/{stem}.md"""
+        try:
+            from src.tools.paths import converted_dir, source_dir_for_path
+            vault = Path(self._db._vault_path)
+            abs_file = Path(self._db.resolve(doc_path))
+            source_dir = source_dir_for_path(vault, abs_file)
+            conv = converted_dir(source_dir)
+            conv_md = conv / f"{abs_file.stem}.md"
+            if conv_md.exists():
+                return conv_md.read_text(encoding="utf-8")
+        except Exception:
+            pass
+        return None
 
     def validate_input(self, params: dict) -> list[str]:
         return [] if (params.get("title") or params.get("path")) else ["缺少 title 或 path 参数"]

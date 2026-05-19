@@ -516,6 +516,28 @@ class Orchestrator:
                 "tool_calls": tool_call_msgs,
             })
 
+            # 批量操作提示：多个 document_ingest 时告知用户进度
+            ingest_calls = [tc for tc in tool_calls_acc.values()
+                           if tc["name"] == "document_ingest"]
+            if len(ingest_calls) >= 2:
+                file_names = []
+                for tc in ingest_calls:
+                    try:
+                        args = json.loads(tc["arguments"])
+                        p = args.get("path", "")
+                        file_names.append(os.path.basename(p))
+                    except Exception:
+                        pass
+                if file_names:
+                    est_min = max(1, len(file_names) * 60 // 60)
+                    yield (f"\n> 📋 即将处理 {len(file_names)} 个文件"
+                           f"（每个约 40~80 秒，预计共 {est_min} 分钟）:\n")
+                    for fn in file_names[:8]:
+                        yield f">   - {fn}\n"
+                    if len(file_names) > 8:
+                        yield f">   ... 等 {len(file_names) - 8} 个文件\n"
+                    yield ">\n"
+
             for idx in sorted(tool_calls_acc.keys()):
                 tc = tool_calls_acc[idx]
 

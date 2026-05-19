@@ -97,18 +97,40 @@ class GraphBuilder(BaseTool):
             return ToolResult.err(f"vault 中没有 .md 文件: {vault_path}")
 
         # 2. 提取节点和边
-        nodes, edges = self._extract_all(md_files, incremental, output_dir, vault_path)
+        md_nodes, md_edges = self._extract_all(md_files, incremental, output_dir, vault_path)
+
+        # 3. 提取 entity 节点（从 .flamme/entities/）并逆向到源 PDF
+        entity_files = self._find_entity_files(vault_path)
+        ent_nodes, ent_edges = self._extract_entities(entity_files, vault_path)
+
+        # 4. 合并：entity 数据优先填充 source_file / entity_file
+        all_nodes: dict[str, dict] = {n["id"]: n for n in md_nodes}
+        for n in ent_nodes:
+            nid = n["id"]
+            if nid in all_nodes:
+                existing = all_nodes[nid]
+                if n.get("source_file") and not existing.get("source_file"):
+                    existing["source_file"] = n["source_file"]
+                if n.get("entity_file"):
+                    existing["entity_file"] = n["entity_file"]
+                if n.get("type") == "entity":
+                    existing["type"] = "entity"
+            else:
+                all_nodes[nid] = n
+
+        nodes = list(all_nodes.values())
+        edges = md_edges + ent_edges
 
         if not nodes:
             return ToolResult.err("没有提取到有效节点")
 
-        # 3. 写入 SQLite（在 graphify 处理前，避免列表被修改）
+        # 5. 写入 SQLite
         self._write_to_sqlite(nodes, edges)
 
-        # 4. 构建 NetworkX 图 + 社区检测
+        # 6. 构建 NetworkX 图 + 社区检测
         graph, communities = self._build_graph(nodes, edges)
 
-        # 5. 导出
+        # 7. 导出
         Path(output_dir).mkdir(parents=True, exist_ok=True)
 
         json_path = str(Path(output_dir) / "graph.json")
@@ -141,16 +163,135 @@ class GraphBuilder(BaseTool):
                 hashes[sf] = ch
         return hashes
 
+    SKIP_DIRS = {".wiki", ".obsidian", ".git", "node_modules", ".trash", ".flamme"}
+    SKIP_SUFFIXES = (".excalidraw.md", ".ocr.md")
+
     def _find_markdown_files(self, vault_path: str) -> list[Path]:
-        """递归查找所有 .md 文件（排除 .wiki/ .obsidian/）"""
+        """递归查找所有 .md 文件（排除噪声目录和辅助文件）"""
         vault = Path(vault_path)
         files = []
-        skip_dirs = {".wiki", ".obsidian", ".git", "node_modules"}
         for p in vault.rglob("*.md"):
-            if any(part in skip_dirs for part in p.parts):
+            if any(part in self.SKIP_DIRS for part in p.parts):
+                continue
+            if p.name.endswith(self.SKIP_SUFFIXES):
                 continue
             files.append(p)
         return sorted(files)
+
+    def _find_entity_files(self, vault_path: str) -> list[Path]:
+        """查找 .flamme/entities/*.md 文件"""
+        vault = Path(vault_path)
+        return sorted(vault.rglob(".flamme/entities/*.md"))
+
+    def _extract_entities(self, entity_files: list[Path],
+                          vault_path: str) -> tuple[list[dict], list[dict]]:
+        """从 .flamme/entities/ 提取 entity 节点，逆向到源 PDF"""
+        nodes: dict[str, dict] = {}
+        edges: list[dict] = []
+        vault = Path(vault_path)
+
+        # ── Pass 1: 只建真实节点（entity + PDF document） ──
+        entity_metas: list[tuple[str, dict]] = []  # (node_id, metadata)
+        for fp in entity_files:
+            try:
+                raw = fp.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            metadata, _ = self._parse_frontmatter(raw)
+
+            title = metadata.get("title", fp.stem)
+            node_id = _node_id(title)
+
+            # 解析 sources → 定位 PDF
+            sources = metadata.get("sources", [])
+            pdf_rel = ""
+            if sources and isinstance(sources, list):
+                first = str(sources[0]).strip("[]").strip()
+                src_dir = self._source_dir_for_entity(vault, fp)
+                pdf_file = src_dir / f"{first}.pdf"
+                if pdf_file.exists():
+                    pdf_rel = self._to_relpath(pdf_file, vault_path)
+                else:
+                    pdf_rel = self._to_relpath(fp, vault_path)
+
+            entity_rel = self._to_relpath(fp, vault_path)
+
+            if node_id not in nodes:
+                nodes[node_id] = {
+                    "id": node_id,
+                    "label": title,
+                    "type": "entity",
+                    "source_file": pdf_rel,
+                    "entity_file": entity_rel,
+                    "tags": metadata.get("tags", []),
+                    "level": "",
+                    "content_hash": "",
+                }
+
+            # PDF 文档节点 + PDF → entity 边
+            for src in sources:
+                src_name = str(src).strip("[]").strip()
+                if not src_name:
+                    continue
+                src_id = _node_id(src_name)
+                src_dir = self._source_dir_for_entity(vault, fp)
+                pdf_file = src_dir / f"{src_name}.pdf"
+                pdf_path = self._to_relpath(pdf_file, vault_path) if pdf_file.exists() else ""
+                if src_id not in nodes:
+                    nodes[src_id] = {
+                        "id": src_id,
+                        "label": src_name,
+                        "type": "document",
+                        "source_file": pdf_path,
+                        "tags": [],
+                        "level": "",
+                        "content_hash": "",
+                    }
+                edges.append({
+                    "source": src_id,
+                    "target": node_id,
+                    "relation": "has_entity",
+                    "confidence": "EXTRACTED",
+                    "confidence_score": 1.0,
+                    "source_file": pdf_path,
+                })
+
+            entity_metas.append((node_id, metadata))
+
+        # ── Pass 2: related 边，只连到已有节点 ──
+        for node_id, metadata in entity_metas:
+            for rel in metadata.get("related", []):
+                if not isinstance(rel, str):
+                    continue
+                rel_name = rel.strip("[]").strip()
+                if not rel_name:
+                    continue
+                rel_id = _node_id(rel_name)
+                if rel_id in nodes:
+                    edges.append({
+                        "source": node_id,
+                        "target": rel_id,
+                        "relation": "related_to",
+                        "confidence": "EXTRACTED",
+                        "confidence_score": 0.8,
+                        "source_file": "",
+                    })
+
+        return list(nodes.values()), edges
+
+    @staticmethod
+    def _source_dir_for_entity(vault: Path, entity_file: Path) -> Path:
+        """从 .flamme/entities/X.md 逆向到源目录 (去掉 .flamme/entities/)"""
+        try:
+            from src.tools.paths import source_dir_for_path
+            return source_dir_for_path(vault, entity_file)
+        except ImportError:
+            # fallback: 手动剥离 .flamme
+            parts = entity_file.relative_to(vault).parts
+            if ".flamme" in parts:
+                idx = parts.index(".flamme")
+                return vault.joinpath(*parts[:idx])
+            return entity_file.parent
 
     def _extract_all(self, md_files: list[Path], incremental: bool,
                      output_dir: str, vault_path: str) -> tuple[list[dict], list[dict]]:
@@ -200,54 +341,35 @@ class GraphBuilder(BaseTool):
                     "content_hash": content_hash,
                 }
 
-            # 边 — wikilinks
+            # 边 — wikilinks（只连到已有节点，不创建 phantom concept）
             for target in extract_wikilinks(content):
                 target_id = _node_id(target)
-                # 确保 target 节点存在
-                if target_id not in nodes:
-                    nodes[target_id] = {
-                        "id": target_id,
-                        "label": target,
-                        "type": "concept",
-                        "source_file": "",
-                        "tags": [],
-                        "level": "",
-                        "content_hash": "",
-                    }
-                edges.append({
-                    "source": node_id,
-                    "target": target_id,
-                    "relation": "related_to",
-                    "confidence": "EXTRACTED",
-                    "confidence_score": 1.0,
-                    "source_file": rel_path,
-                })
+                if target_id in nodes:
+                    edges.append({
+                        "source": node_id,
+                        "target": target_id,
+                        "relation": "related_to",
+                        "confidence": "EXTRACTED",
+                        "confidence_score": 1.0,
+                        "source_file": rel_path,
+                    })
 
-            # 边 — related frontmatter（[[xxx]] 格式）
+            # 边 — related frontmatter（只连到已有节点）
             for rel in metadata.get("related", []):
                 if not isinstance(rel, str):
                     continue
                 rel_name = rel.strip("[]").strip()
                 if rel_name:
                     rel_id = _node_id(rel_name)
-                    if rel_id not in nodes:
-                        nodes[rel_id] = {
-                            "id": rel_id,
-                            "label": rel_name,
-                            "type": "concept",
-                            "source_file": "",
-                            "tags": [],
-                            "level": "",
-                            "content_hash": "",
-                        }
-                    edges.append({
-                        "source": node_id,
-                        "target": rel_id,
-                        "relation": "related_to",
-                        "confidence": "EXTRACTED",
-                        "confidence_score": 1.0,
-                        "source_file": rel_path,
-                    })
+                    if rel_id in nodes:
+                        edges.append({
+                            "source": node_id,
+                            "target": rel_id,
+                            "relation": "related_to",
+                            "confidence": "EXTRACTED",
+                            "confidence_score": 1.0,
+                            "source_file": rel_path,
+                        })
 
         return list(nodes.values()), edges
 

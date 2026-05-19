@@ -16,17 +16,39 @@ export interface GraphNode {
   level?: string;
   community?: number;
   val?: number;
+  source_file?: string;
+  entity_file?: string;
+  // Hierarchy fields (synthetic group nodes)
+  isGroup?: boolean;
+  childCount?: number;
+  dirPath?: string;
 }
 
 export interface GraphEdge {
   source: string;
   target: string;
   label: string;
+  count?: number;
 }
 
 export interface GraphData {
   nodes: GraphNode[];
   edges: GraphEdge[];
+}
+
+export interface DirNode {
+  id: string;           // canonical path: "lite/微积分②"
+  label: string;        // last segment: "微积分②"
+  children: DirNode[];
+  leafNodeIds: string[];
+  totalCount: number;   // recursive leaf count
+}
+
+export interface AggregatedEdge {
+  source: string;
+  target: string;
+  count: number;
+  label: string;
 }
 
 export interface FlammeSettings {

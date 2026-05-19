@@ -21,8 +21,33 @@ def _load_graph() -> dict:
     if not gp:
         return {"nodes": {}, "edges": [], "communities": {}}
     data = json.loads(Path(gp).read_text(encoding="utf-8"))
+    raw_nodes = data.get("nodes", [])
+
+    # Auto-detect: graphify gives nodes as list [{id,...}], legacy gives dict {id: {...}}
+    if isinstance(raw_nodes, list):
+        nodes_dict: dict = {}
+        for n in raw_nodes:
+            nid = n.get("id", "")
+            nodes_dict[nid] = {
+                "label": n.get("label", nid),
+                "type": n.get("file_type", n.get("type", "document")),
+                "community": n.get("community"),
+                "source_file": n.get("source_file", ""),
+                "level": "",
+                "tags": [],
+            }
+        raw_links = data.get("links", data.get("edges", []))
+        edges = [{"source": l.get("source", ""), "target": l.get("target", ""),
+                  "relation": l.get("relation", "")} for l in raw_links]
+        communities: dict = {}
+        for nid, attrs in nodes_dict.items():
+            cid = attrs.get("community")
+            if cid is not None:
+                communities.setdefault(cid, []).append(nid)
+        return {"nodes": nodes_dict, "edges": edges, "communities": communities}
+
     return {
-        "nodes": data.get("nodes", {}),
+        "nodes": raw_nodes,
         "edges": data.get("edges", []),
         "communities": data.get("communities", {}),
     }
@@ -43,15 +68,22 @@ def _to_force_graph_format(data: dict) -> dict:
 
     nodes = []
     for nid, attrs in nodes_dict.items():
-        nodes.append({
+        if degree_map.get(nid, 0) == 0:
+            continue
+        node_item = {
             "id": nid,
             "label": attrs.get("label", nid),
             "type": attrs.get("type", "document"),
             "level": attrs.get("level", ""),
             "tags": attrs.get("tags", []),
             "community": attrs.get("community", -1),
-            "val": degree_map.get(nid, 0),  # 节点大小 = 连接数
-        })
+            "val": degree_map[nid],
+            "source_file": attrs.get("source_file", ""),
+        }
+        entity_file = attrs.get("entity_file", "")
+        if entity_file:
+            node_item["entity_file"] = entity_file
+        nodes.append(node_item)
 
     edges = []
     for e in edges_list:

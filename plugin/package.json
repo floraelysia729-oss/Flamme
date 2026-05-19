@@ -17,6 +17,8 @@
     "typescript": "^5.7.0"
   },
   "dependencies": {
+    "@types/dagre": "^0.7.54",
+    "dagre": "^0.8.5",
     "katex": "^0.16.0",
     "marked": "^15.0.0"
   }

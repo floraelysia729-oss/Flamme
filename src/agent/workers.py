@@ -6,9 +6,12 @@
 
 import hashlib
 import json
+import logging
 import os
 import re
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from src.agent.worker import BaseWorker
 from src.db.client import SQLiteClient
@@ -33,10 +36,17 @@ class IngestWorker(BaseWorker):
         if not os.path.isabs(path) and self._db._vault_path:
             path = os.path.join(self._db._vault_path, path)
 
+        # PPT/PPTX: 先转 PDF（同目录），再走 PDF 流程
+        if path.lower().endswith((".ppt", ".pptx")):
+            pdf_path = self._ppt_to_pdf(path)
+            if not pdf_path:
+                return f"错误: PPT 转 PDF 失败: {path}"
+            path = pdf_path
+
         # 按文件类型选择处理器
         if path.endswith(".excalidraw.md"):
             return self._handle_excalidraw(path)
-        elif path.lower().endswith((".pdf", ".doc", ".docx", ".ppt", ".pptx")):
+        elif path.lower().endswith((".pdf", ".doc", ".docx")):
             return self._handle_pdf(path, level)
 
         # 默认: Markdown 处理
@@ -74,6 +84,58 @@ class IngestWorker(BaseWorker):
         # 自动 embedding
         embedded = self._auto_embed(path, content, content_hash)
         return f"已导入: {os.path.basename(path)} (level={metadata.get('level', level)})"
+
+    def _ppt_to_pdf(self, ppt_path: str) -> str | None:
+        """将 PPT/PPTX 转为 PDF（同目录），返回 PDF 绝对路径；失败返回 None"""
+        src = Path(ppt_path)
+        pdf_path = src.with_suffix(".pdf")
+        if pdf_path.exists():
+            logger.info("PDF already exists: %s", pdf_path)
+            return str(pdf_path)
+
+        logger.info("Converting PPT→PDF: %s", src.name)
+
+        # 优先 Windows COM (PowerPoint)
+        try:
+            import comtypes.client
+            # Worker 在后台线程，COM 必须先初始化
+            import pythoncom
+            pythoncom.CoInitialize()
+            try:
+                powerpoint = comtypes.client.GetActiveObject("Powerpoint.Application")
+            except Exception:
+                powerpoint = comtypes.client.CreateObject("Powerpoint.Application")
+            deck = powerpoint.Presentations.Open(str(src.resolve()), WithWindow=False)
+            deck.SaveAs(str(pdf_path.resolve()), 32)  # ppSaveAsPDF
+            deck.Close()
+            if pdf_path.exists():
+                logger.info("PPT→PDF done: %s", pdf_path.name)
+                return str(pdf_path)
+            logger.error("PPT→PDF: SaveAs returned but PDF not found")
+        except Exception as e:
+            logger.warning("PowerPoint COM failed: %s, trying LibreOffice...", e)
+        finally:
+            try:
+                pythoncom.CoUninitialize()
+            except Exception:
+                pass
+
+        # 回退 LibreOffice
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["soffice", "--headless", "--convert-to", "pdf", "--outdir",
+                 str(src.parent), str(src)],
+                capture_output=True, text=True, timeout=120,
+            )
+            if result.returncode == 0 and pdf_path.exists():
+                logger.info("LibreOffice PPT→PDF done: %s", pdf_path.name)
+                return str(pdf_path)
+            logger.error("LibreOffice failed: %s", result.stderr)
+        except Exception as e:
+            logger.error("LibreOffice not available: %s", e)
+
+        return None
 
     def _handle_pdf(self, path: str, level: str) -> str:
         tool = self._tools.get("pdf_parse")
@@ -235,6 +297,8 @@ class QueryWorker(BaseWorker):
 class LintWorker(BaseWorker):
     """Lint Worker — 知识库完整性检查"""
 
+    BINARY_EXTS = (".pdf", ".doc", ".docx", ".ppt", ".pptx")
+
     @property
     def worker_type(self) -> str:
         return "lint"
@@ -245,6 +309,10 @@ class LintWorker(BaseWorker):
             return False
         return (path.startswith("pro/") or path.startswith("lite/")
                 or path.startswith("raw/"))
+
+    @staticmethod
+    def _is_binary(path: str) -> bool:
+        return path.lower().endswith(LintWorker.BINARY_EXTS)
 
     def _execute_task(self, payload: dict) -> str:
         docs = self._db.list_documents()
@@ -273,6 +341,10 @@ class LintWorker(BaseWorker):
             abs_path = _abs(doc["path"])
             if not os.path.isfile(abs_path):
                 continue  # 已在上面报告
+
+            # 二进制文件跳过 frontmatter 检查
+            if self._is_binary(abs_path):
+                continue
 
             # 读文件验证 frontmatter
             try:
@@ -308,13 +380,66 @@ class LintWorker(BaseWorker):
             if len(fm_issues) > 20:
                 issues.append(f"  ... 还有 {len(fm_issues) - 20} 个")
 
-        # ── 3. 图谱节点 vs 页面 ──
+        # ── 3. .flamme/ 产物完整性 ──
+        flamme_issues = self._check_flamme_artifacts(docs, vault)
+        issues.extend(flamme_issues)
+
+        # ── 4. 图谱节点 vs 页面 ──
         graph_issues = self._check_graph_nodes(docs)
         issues.extend(graph_issues)
 
         if not issues:
             return f"Lint 通过: {len(docs)} 个文档，无问题"
         return f"Lint 发现 {len(docs)} 个文档中的问题:\n" + "\n".join(f"  - {i}" for i in issues)
+
+    def _check_flamme_artifacts(self, docs: list[dict], vault: str) -> list[str]:
+        """检查二进制文件的 .flamme/converted/ 和 pro 级 .flamme/entities/ 产物"""
+        if not vault:
+            return []
+
+        from src.tools.paths import source_dir_for_path, converted_dir, entities_dir
+        vault_path = Path(vault)
+
+        missing_converted = []
+        missing_entities = []
+        entity_dirs_checked: set[str] = set()
+
+        for doc in docs:
+            doc_path = doc["path"]
+            level = doc.get("level", "")
+            abs_path = Path(self._db.resolve(doc_path))
+
+            if not self._is_binary(doc_path):
+                continue
+
+            source_dir = source_dir_for_path(vault_path, abs_path)
+            conv = converted_dir(source_dir)
+            conv_md = conv / f"{abs_path.stem}.md"
+
+            if not conv_md.exists():
+                missing_converted.append(doc_path)
+
+            # pro 级：检查 entities/ 目录是否有内容（每个 source_dir 只检查一次）
+            if level == "pro":
+                source_key = str(source_dir)
+                if source_key not in entity_dirs_checked:
+                    entity_dirs_checked.add(source_key)
+                    ent_dir = entities_dir(source_dir)
+                    if ent_dir.exists() and not any(ent_dir.glob("*.md")):
+                        missing_entities.append(str(source_dir.relative_to(vault_path)))
+
+        issues = []
+        if missing_converted:
+            issues.append(f"[转换缺失] {len(missing_converted)} 个二进制文件未生成 .flamme/converted/:")
+            for f in missing_converted[:15]:
+                issues.append(f"  - {f}")
+            if len(missing_converted) > 15:
+                issues.append(f"  ... 还有 {len(missing_converted) - 15} 个")
+        if missing_entities:
+            issues.append(f"[实体缺失] {len(missing_entities)} 个 pro 级目录无实体页:")
+            for d in missing_entities:
+                issues.append(f"  - {d}/.flamme/entities/ (空)")
+        return issues
 
     def _check_graph_nodes(self, docs: list[dict]) -> list[str]:
         """检查图谱中有节点但无对应页面的情况"""

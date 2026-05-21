@@ -193,6 +193,12 @@ def config_from_headers(headers: dict, base_cfg: Config | None = None) -> Config
         overrides["brain_api_key"] = headers["x-brain-key"]
     if headers.get("x-mineru-token"):
         overrides["mineru_api_token"] = headers["x-mineru-token"]
+    import logging as _log
+    _log.getLogger(__name__).info(
+        "config_from_headers: x-mineru-token=%s (len=%d)",
+        (headers.get("x-mineru-token", "")[:4] + "...") if headers.get("x-mineru-token") else "MISSING",
+        len(headers.get("x-mineru-token", "")),
+    )
 
     if not overrides:
         return base_cfg or load_config()

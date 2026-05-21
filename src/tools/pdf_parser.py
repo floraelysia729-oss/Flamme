@@ -82,7 +82,10 @@ class PDFParserTool(BaseTool):
         if not self._token:
             return ToolResult.err("MinerU API Token 未配置")
 
-        logger.info("PDF 解析开始: %s (%.1fKB)", file_name, file_size / 1024)
+        # 诊断日志：确认 token 来源和内容（masked）
+        _t = self._token or ""
+        _masked = f"{_t[:4]}...{_t[-4:]}" if len(_t) > 8 else f"({len(_t)}chars)"
+        logger.info("PDF 解析开始: %s (%.1fKB), token=%s (len=%d)", file_name, file_size / 1024, _masked, len(_t))
 
         with httpx.Client(timeout=300) as client:
             # 1. 申请上传链接

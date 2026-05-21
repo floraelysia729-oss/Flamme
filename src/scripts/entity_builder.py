@@ -562,7 +562,7 @@ def build_from_file(filepath: Path, all_sources: list[Path],
         print(f"  [skip] empty content: {filepath.name}")
         return []
 
-    source_dir = source_dir_for_path(filepath)
+    source_dir = source_dir_for_path(vp, filepath)
     existing = all_entity_files(vp)
 
     # Step 1: 识别术语

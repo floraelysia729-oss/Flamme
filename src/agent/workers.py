@@ -27,7 +27,7 @@ class IngestWorker(BaseWorker):
 
     def _execute_task(self, payload: dict) -> str:
         path = payload.get("path", "")
-        level = payload.get("level", "lite")
+        level = payload.get("level", "")
 
         if not path:
             return "错误: 未指定文件路径"
@@ -35,6 +35,10 @@ class IngestWorker(BaseWorker):
         # 相对路径 → 绝对路径
         if not os.path.isabs(path) and self._db._vault_path:
             path = os.path.join(self._db._vault_path, path)
+
+        # 从路径自动推断 level（pro/lite/raw）
+        if not level:
+            level = self._infer_level(path)
 
         # PPT/PPTX: 先转 PDF（同目录），再走 PDF 流程
         if path.lower().endswith((".ppt", ".pptx")):
@@ -51,6 +55,22 @@ class IngestWorker(BaseWorker):
 
         # 默认: Markdown 处理
         return self._handle_markdown(path, level)
+
+    @staticmethod
+    def _infer_level(path: str) -> str:
+        """从文件路径推断处理级别: pro/xxx → pro, lite/xxx → lite, 默认 lite"""
+        # 归一化路径分隔符
+        p = path.replace("\\", "/")
+        # 去掉 vault 前缀部分，看第一段
+        for prefix in ("pro/", "lite/", "raw/"):
+            if f"/{prefix}" in f"/{p}" or p.startswith(prefix):
+                return prefix.rstrip("/")
+        # 也检查 vault 内相对路径
+        parts = p.split("/")
+        for part in parts:
+            if part in ("pro", "lite", "raw"):
+                return part
+        return "lite"
 
     def _handle_markdown(self, path: str, level: str) -> str:
         parser = self._tools.get("markdown_parser")

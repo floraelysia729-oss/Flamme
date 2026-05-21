@@ -11,7 +11,7 @@ from pathlib import Path
 from src.tools.interfaces import BaseTool, InterruptBehavior, ToolResult
 
 
-SKIP_DIRS = {".wiki", ".obsidian", ".git", "node_modules", ".trash", ".claude", "__pycache__"}
+SKIP_DIRS = {".wiki", ".obsidian", ".git", "node_modules", ".trash", ".claude", "__pycache__", "venv", ".venv", "site-packages"}
 
 
 def scan_all_md(vault_path: str) -> list[str]:

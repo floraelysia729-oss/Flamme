@@ -148,6 +148,20 @@ ORCHESTRATOR_TOOL_DEFS = [
             }
         }
     },
+    # --- 全量同步 ---
+    {
+        "type": "function",
+        "function": {
+            "name": "wiki_sync",
+            "description": "同步 vault 所有文件到知识库索引（扫描新增/修改/删除），可选同时生成向量索引。用户说「同步」「入库」「处理所有文件」「索引所有文件」时调用。wiki_search 返回空结果时也应主动建议调用。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "embed": {"type": "boolean", "default": True, "description": "是否同时生成向量索引"}
+                }
+            }
+        }
+    },
     # --- Worker 派发 ---
     {
         "type": "function",
@@ -283,6 +297,8 @@ SYSTEM_PROMPT = """你是 LLM-WIKI 知识库的 AI 助手。你的职责不仅�
 
 ## 工具使用策略
 - 知识问题 → wiki_search → wiki_read_page（需要详情时）
+- **wiki_search 返回空 → 主动建议用户调用 wiki_sync 同步入库**
+- 全量同步/入库 → wiki_sync（首次使用、添加新文件后、搜索无结果时）
 - 深入了解 → graph_query 找关联
 - 新概念 → entity_extract → 建议 wiki_create_page
 - 摄入 Markdown/文本文件 → document_ingest
@@ -669,6 +685,10 @@ class Orchestrator:
         if name == "wiki_cleanup":
             return self._handle_cleanup(args)
 
+        # 全量同步
+        if name == "wiki_sync":
+            return self._handle_sync(args)
+
         # 需要派发给 Worker 的任务
         if name in WORKER_DISPATCH and self._coordinator:
             worker_type = WORKER_DISPATCH[name]
@@ -815,6 +835,41 @@ class Orchestrator:
             }
 
         return {"error": f"未知操作: {action}"}
+
+    def _handle_sync(self, args: dict) -> dict:
+        """全量同步 vault 文件到知识库索引"""
+        from src.tools.sync import SyncTool
+        db = self._coordinator._db
+        sync = SyncTool(db, self._vault_path)
+        result = sync.execute(args)
+        if result.is_error:
+            return {"error": result.error}
+
+        data = result.data
+        do_embed = args.get("embed", True)
+
+        # 通过 coordinator 的 agent 执行 embedding 索引
+        if do_embed and data.get("to_embed") and self._coordinator:
+            try:
+                agent = self._coordinator._agent
+                embed_result = agent._handle_index({"full": False})
+                data["embed_result"] = embed_result
+            except Exception as e:
+                logger.warning("自动 embedding 失败: %s", e)
+                data["embed_error"] = str(e)
+
+        added = len(data.get("added", []))
+        updated = len(data.get("updated", []))
+        removed = len(data.get("removed", []))
+        unchanged = data.get("unchanged", 0)
+        summary = (
+            f"同步完成：新增 {added}，更新 {updated}，"
+            f"删除 {removed}，未变 {unchanged}"
+        )
+        if data.get("embed_result"):
+            summary += f"\n{data['embed_result']}"
+        data["result"] = summary
+        return data
 
     def _execute_tool_streamed(self, tc: dict, tool) -> dict:
         """用线程运行工具的 stream_execute，实时 yield 进度到生成器。

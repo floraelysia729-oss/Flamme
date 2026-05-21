@@ -9,19 +9,7 @@ from src.tools.paths import (
     flamme_dir, converted_dir, ocr_dir, entities_dir, topics_dir,
     all_flamme_dirs, all_entity_files, source_dir_for_path, source_dir_from_vault_rel,
 )
+from src.config import detect_vault as _detect_vault
 
 
-def _detect_vault() -> Path:
-    """从当前目录向上查找 .obsidian/"""
-    import os
-    env = os.environ.get("FLAMME_VAULT", "") or os.environ.get("LLM_WIKI_VAULT", "")
-    if env:
-        return Path(env)
-    current = Path.cwd()
-    for parent in [current] + list(current.parents):
-        if (parent / ".obsidian").is_dir():
-            return parent
-    return current
-
-
-VAULT = _detect_vault()
+VAULT = Path(_detect_vault())

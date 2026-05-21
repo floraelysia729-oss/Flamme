@@ -1,15 +1,18 @@
 """状态路由 — 统计信息"""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
-from src.api.deps import get_db
+from src.api.deps import get_request_config_or_default
 
 router = APIRouter(prefix="/status")
 
 
 @router.get("")
-def get_status():
-    db = get_db()
+def get_status(request: Request):
+    from src.db.client import SQLiteClient
+
+    cfg = get_request_config_or_default(request)
+    db = SQLiteClient(cfg.db_path, vault_path=cfg.vault_path)
     stats = db.get_stats()
     emb_stats = db.get_embedding_stats()
     return {

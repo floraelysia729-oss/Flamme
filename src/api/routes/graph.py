@@ -4,20 +4,19 @@ import json
 from collections import deque
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
-from src.api.deps import get_db, get_tool_registry, get_config
+from src.api.deps import get_request_config_or_default
 
 router = APIRouter(prefix="/graph")
 
 
-def _graph_path() -> str:
-    cfg = get_config()
+def _graph_path(cfg) -> str:
     return cfg.graph_json if Path(cfg.graph_json).exists() else ""
 
 
-def _load_graph() -> dict:
-    gp = _graph_path()
+def _load_graph(cfg) -> dict:
+    gp = _graph_path(cfg)
     if not gp:
         return {"nodes": {}, "edges": [], "communities": {}}
     data = json.loads(Path(gp).read_text(encoding="utf-8"))
@@ -97,16 +96,18 @@ def _to_force_graph_format(data: dict) -> dict:
 
 
 @router.get("/full")
-def get_full_graph():
+def get_full_graph(request: Request):
     """返回标准 {nodes, edges} JSON — react-force-graph-2d 格式"""
-    data = _load_graph()
+    cfg = get_request_config_or_default(request)
+    data = _load_graph(cfg)
     return _to_force_graph_format(data)
 
 
 @router.get("/subgraph")
-def get_subgraph(entity: str, depth: int = 1):
+def get_subgraph(request: Request, entity: str, depth: int = 1):
     """返回以某实体为中心的局部子图（BFS）"""
-    data = _load_graph()
+    cfg = get_request_config_or_default(request)
+    data = _load_graph(cfg)
     nodes_dict = data.get("nodes", {})
     edges_list = data.get("edges", [])
 
@@ -123,10 +124,10 @@ def get_subgraph(entity: str, depth: int = 1):
 
     # BFS 扩展
     visited = {matched_id}
-    queue = deque([(matched_id, 0)])
+    queue_bfs = deque([(matched_id, 0)])
 
-    while queue:
-        current, d = queue.popleft()
+    while queue_bfs:
+        current, d = queue_bfs.popleft()
         if d >= depth:
             continue
         for e in edges_list:
@@ -138,7 +139,7 @@ def get_subgraph(entity: str, depth: int = 1):
                 neighbor = src
             if neighbor and neighbor not in visited:
                 visited.add(neighbor)
-                queue.append((neighbor, d + 1))
+                queue_bfs.append((neighbor, d + 1))
 
     # 过滤节点和边
     filtered_nodes = {nid: attrs for nid, attrs in nodes_dict.items() if nid in visited}
@@ -151,14 +152,16 @@ def get_subgraph(entity: str, depth: int = 1):
 
 
 @router.get("/data")
-def get_graph_data():
+def get_graph_data(request: Request):
     """原始邻接表格式（向后兼容）"""
-    return _load_graph()
+    cfg = get_request_config_or_default(request)
+    return _load_graph(cfg)
 
 
 @router.get("/neighbors/{node:path}")
-def get_neighbors(node: str):
-    graph = _load_graph()
+def get_neighbors(request: Request, node: str):
+    cfg = get_request_config_or_default(request)
+    graph = _load_graph(cfg)
     nodes = graph.get("nodes", {})
     edges = graph.get("edges", [])
 
@@ -186,30 +189,38 @@ def get_neighbors(node: str):
 
 
 @router.get("/stats")
-def get_graph_stats():
-    graph = _load_graph()
+def get_graph_stats(request: Request):
+    cfg = get_request_config_or_default(request)
+    graph = _load_graph(cfg)
     return {"nodes": len(graph.get("nodes", {})),
             "edges": len(graph.get("edges", [])),
             "communities": len(graph.get("communities", {}))}
 
 
 @router.post("/build")
-def build_graph():
+def build_graph(request: Request):
+    from src.db.client import SQLiteClient
+    from src.tools.embedding_store import EmbeddingStore
+    from src.tools.bootstrap import build_registry
+    from src.api.deps import build_llm_from_config
+    from src.tools.interfaces import ToolResult
+
+    cfg = get_request_config_or_default(request)
+    db = SQLiteClient(cfg.db_path, vault_path=cfg.vault_path)
+    emb = EmbeddingStore(cfg.embeddings_dir, dim=cfg.embed_dim)
+    llm = build_llm_from_config(cfg)
+    tools = build_registry(cfg, db, llm=llm, embedding_store=emb)
     try:
-        tools = get_tool_registry()
         build_tool = tools.get("graph_builder")
         if not build_tool:
             return {"error": "graph_builder 未注册"}
-        cfg = get_config()
-        from src.tools.interfaces import ToolResult
         result = build_tool.execute({"vault_path": cfg.vault_path})
         if isinstance(result, ToolResult):
             if result.is_error:
                 return {"error": result.error}
         elif isinstance(result, dict) and "error" in result:
             return {"error": result["error"]}
-        return get_full_graph()
+        return get_full_graph(request)
     except Exception as e:
         import traceback
         return {"error": f"{type(e).__name__}: {e}", "traceback": traceback.format_exc()}
-    return get_full_graph()

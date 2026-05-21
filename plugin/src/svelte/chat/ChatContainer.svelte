@@ -78,18 +78,11 @@
 
     try {
       const { streamChat } = await import('../../api/sse');
+      const { buildAuthHeaders, getVaultPath } = await import('../../api/client');
       let fullContent = '';
       let tokens = 0;
 
-      // 构建 auth headers
-      const headers: Record<string, string> = {};
-      if (plugin.settings.llmApiKey) {
-        headers['X-LLM-Key'] = plugin.settings.llmApiKey;
-        headers['X-Brain-Key'] = plugin.settings.llmApiKey;
-      }
-      if (plugin.settings.embedApiKey) headers['X-Embed-Key'] = plugin.settings.embedApiKey;
-
-      for await (const event of streamChat(text, sessionId, controller.signal, mode, plugin.settings.backendUrl, mode === 'learn' ? selectedFiles : undefined, headers)) {
+      for await (const event of streamChat(text, sessionId, controller.signal, mode, plugin.settings.backendUrl, mode === 'learn' ? selectedFiles : undefined, buildAuthHeaders(plugin.settings, getVaultPath()))) {
         if (abortController !== controller) return;
         
         if (avatarState === 'think') avatarState = 'answer';

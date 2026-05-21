@@ -1,5 +1,21 @@
+/** 获取 Obsidian vault 绝对路径（仅在插件环境可用） */
+export function getVaultPath(): string {
+  try { return ((window as any).app?.vault?.adapter as any)?.basePath ?? ''; } catch { return ''; }
+}
+
 /** HTTP client for the LLM-WIKI backend */
 import type { GraphData, FlammeSettings } from '../types';
+
+/** 构建带 API key + vault 路径的 headers（全局共用） */
+export function buildAuthHeaders(settings: FlammeSettings, vaultPath?: string): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (vaultPath) headers['X-Vault-Path'] = vaultPath;
+  if (settings.llmApiKey) headers['X-LLM-Key'] = settings.llmApiKey;
+  if (settings.embedApiKey) headers['X-Embed-Key'] = settings.embedApiKey;
+  if (settings.llmApiKey) headers['X-Brain-Key'] = settings.llmApiKey;
+  if (settings.mineruApiToken) headers['X-MinerU-Token'] = settings.mineruApiToken;
+  return headers;
+}
 
 export class ApiClient {
   private baseUrl: string;
@@ -15,19 +31,9 @@ export class ApiClient {
     this.baseUrl = settings.backendUrl + '/api';
   }
 
-  /** 构建带 API key 的 headers */
-  private authHeaders(): Record<string, string> {
-    const headers: Record<string, string> = {};
-    if (this.settings.llmApiKey) headers['X-LLM-Key'] = this.settings.llmApiKey;
-    if (this.settings.embedApiKey) headers['X-Embed-Key'] = this.settings.embedApiKey;
-    if (this.settings.llmApiKey) headers['X-Brain-Key'] = this.settings.llmApiKey;
-    if (this.settings.mineruApiToken) headers['X-MinerU-Token'] = this.settings.mineruApiToken;
-    return headers;
-  }
-
   private async fetchJSON<T>(path: string, options?: RequestInit): Promise<T> {
     const resp = await fetch(`${this.baseUrl}${path}`, {
-      headers: { 'Content-Type': 'application/json', ...this.authHeaders(), ...options?.headers },
+      headers: { 'Content-Type': 'application/json', ...buildAuthHeaders(this.settings, getVaultPath()), ...options?.headers },
       ...options,
     });
     if (!resp.ok) throw new Error(`API ${resp.status}: ${resp.statusText}`);

@@ -87,6 +87,14 @@ def get_request_config(request: Request) -> Config:
     return config_from_headers(dict(request.headers))
 
 
+def get_request_config_or_default(request: Request) -> Config:
+    """有配置 header 时返回 per-request Config，否则返回 cached 默认 Config"""
+    cfg = config_from_headers(dict(request.headers))
+    if cfg is get_config():
+        return cfg
+    return cfg
+
+
 def build_llm_from_config(cfg: Config) -> DefaultLLM | None:
     """从给定 Config 构建 LLM 实例（非缓存）"""
     if not cfg.llm_api_key:

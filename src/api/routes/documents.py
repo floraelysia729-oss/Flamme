@@ -1,9 +1,9 @@
 """文档路由 — 列表、详情、搜索"""
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel
 
-from src.api.deps import get_db
+from src.api.deps import get_request_config_or_default
 
 router = APIRouter(prefix="/documents")
 
@@ -17,13 +17,17 @@ class DocumentListResponse(BaseModel):
 
 @router.get("", response_model=DocumentListResponse)
 def list_documents(
+    request: Request,
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     search: str | None = None,
     level: str | None = None,
     tag: str | None = None,
 ):
-    db = get_db()
+    from src.db.client import SQLiteClient
+
+    cfg = get_request_config_or_default(request)
+    db = SQLiteClient(cfg.db_path, vault_path=cfg.vault_path)
     docs = db.list_documents(level=level)
     if search:
         search_lower = search.lower()
@@ -38,15 +42,17 @@ def list_documents(
 
 
 @router.get("/{file_path:path}")
-def get_document(file_path: str):
-    db = get_db()
+def get_document(file_path: str, request: Request):
+    from src.db.client import SQLiteClient
+    from src.tools.markdown_parser import MarkdownParser
+    from src.tools.interfaces import ToolResult
+
+    cfg = get_request_config_or_default(request)
+    db = SQLiteClient(cfg.db_path, vault_path=cfg.vault_path)
     doc = db.get_document(file_path)
     if not doc:
         return {"error": "not found", "path": file_path}
-    # 读取正文
     content = ""
-    from src.tools.markdown_parser import MarkdownParser
-    from src.tools.interfaces import ToolResult
     parser = MarkdownParser()
     parsed = parser.execute({"path": db.resolve(doc["path"])})
     if isinstance(parsed, ToolResult):
@@ -68,11 +74,15 @@ class SearchRequest(BaseModel):
 
 
 @router.post("/search")
-def search_documents(req: SearchRequest):
-    from src.api.deps import get_embedding_store, get_llm, get_llm_queue
-    db = get_db()
-    emb = get_embedding_store()
-    llm = get_llm()
+def search_documents(req: SearchRequest, request: Request):
+    from src.db.client import SQLiteClient
+    from src.tools.embedding_store import EmbeddingStore
+    from src.api.deps import build_llm_from_config
+
+    cfg = get_request_config_or_default(request)
+    db = SQLiteClient(cfg.db_path, vault_path=cfg.vault_path)
+    emb = EmbeddingStore(cfg.embeddings_dir, dim=cfg.embed_dim)
+    llm = build_llm_from_config(cfg)
     if not llm or not emb or emb.count() == 0:
         return {"results": [], "message": "向量索引为空或 LLM 未配置"}
     try:

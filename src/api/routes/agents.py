@@ -3,11 +3,11 @@
 import json
 from typing import Generator
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from src.api.deps import get_db, get_tool_registry, get_embedding_store, get_llm, get_llm_queue
+from src.api.deps import get_request_config_or_default, build_llm_from_config
 
 router = APIRouter(prefix="/agents")
 
@@ -16,14 +16,18 @@ class AgentChatRequest(BaseModel):
     message: str
 
 
-def _agent_sse_stream(name: str, question: str) -> Generator[str, None, None]:
+def _agent_sse_stream(name: str, question: str, cfg) -> Generator[str, None, None]:
     from src.api.agent_registry import AgentRegistry
-    from src.api.deps import get_llm_queue as _gq
-    db = get_db()
-    tools = get_tool_registry()
-    emb = get_embedding_store()
-    llm = get_llm()
-    queue = _gq()
+    from src.db.client import SQLiteClient
+    from src.tools.embedding_store import EmbeddingStore
+    from src.tools.bootstrap import build_registry
+    from src.llm.queue import LLMQueue
+
+    db = SQLiteClient(cfg.db_path, vault_path=cfg.vault_path)
+    emb = EmbeddingStore(cfg.embeddings_dir, dim=cfg.embed_dim)
+    llm = build_llm_from_config(cfg)
+    queue = LLMQueue(max_concurrency=cfg.max_concurrency) if llm else None
+    tools = build_registry(cfg, db, llm=llm, embedding_store=emb)
     registry = AgentRegistry(db, tools, emb, llm, queue)
     agent = registry.get_agent(name)
     try:
@@ -35,21 +39,28 @@ def _agent_sse_stream(name: str, question: str) -> Generator[str, None, None]:
 
 
 @router.get("")
-def list_agents():
+def list_agents(request: Request):
     from src.api.agent_registry import AgentRegistry
-    db = get_db()
-    tools = get_tool_registry()
-    emb = get_embedding_store()
-    llm = get_llm()
-    queue = get_llm_queue()
+    from src.db.client import SQLiteClient
+    from src.tools.embedding_store import EmbeddingStore
+    from src.tools.bootstrap import build_registry
+    from src.llm.queue import LLMQueue
+
+    cfg = get_request_config_or_default(request)
+    db = SQLiteClient(cfg.db_path, vault_path=cfg.vault_path)
+    emb = EmbeddingStore(cfg.embeddings_dir, dim=cfg.embed_dim)
+    llm = build_llm_from_config(cfg)
+    queue = LLMQueue(max_concurrency=cfg.max_concurrency) if llm else None
+    tools = build_registry(cfg, db, llm=llm, embedding_store=emb)
     registry = AgentRegistry(db, tools, emb, llm, queue)
     return {"agents": registry.list_agents()}
 
 
 @router.post("/{name}/chat")
-async def agent_chat(name: str, req: AgentChatRequest):
+async def agent_chat(name: str, req: AgentChatRequest, request: Request):
+    cfg = get_request_config_or_default(request)
     return StreamingResponse(
-        _agent_sse_stream(name, req.message),
+        _agent_sse_stream(name, req.message, cfg),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

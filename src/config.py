@@ -110,11 +110,25 @@ class Config:
 
 
 def detect_vault() -> str:
-    """从当前目录向上查找包含 .obsidian/ 的目录"""
+    """从当前目录向上查找包含 .obsidian/ 的目录。
+    找不到时扫描 cwd 直接子目录，避免把项目本身误当 vault。
+    """
     current = Path.cwd()
+    # 1. 向上查找
     for parent in [current] + list(current.parents):
         if (parent / ".obsidian").is_dir():
             return str(parent)
+    # 2. 向下扫描一层子目录
+    for child in sorted(current.iterdir()):
+        if child.is_dir() and (child / ".obsidian").is_dir():
+            return str(child)
+    # 3. 都没找到 → 警告，但仍然 fallback 到 cwd（兼容无 .obsidian 的纯文件夹）
+    import logging
+    logging.getLogger(__name__).warning(
+        "未找到 .obsidian 目录，vault 将使用当前目录: %s。"
+        "建议在 .env 中设置 LLM_WIKI_VAULT 指向你的 Obsidian vault。",
+        current,
+    )
     return str(current)
 
 
@@ -159,13 +173,17 @@ def load_config(**overrides) -> Config:
 def config_from_headers(headers: dict, base_cfg: Config | None = None) -> Config:
     """从插件请求 headers 构建 Config（用户自带 key 模式）
 
-    插件通过 X-LLM-Key / X-Embed-Key / X-Brain-Key / X-MinerU-Token 传入 API key，
+    插件通过以下 header 传入配置：
+      X-Vault-Path        → vault_path
+      X-LLM-Key           → llm_api_key
+      X-Embed-Key         → embed_api_key
+      X-Brain-Key         → brain_api_key
+      X-MinerU-Token      → mineru_api_token
     其他配置继承 .env 或默认值。
     """
-    if base_cfg is None:
-        base_cfg = load_config()
-
     overrides = {}
+    if headers.get("x-vault-path"):
+        overrides["vault_path"] = headers["x-vault-path"]
     if headers.get("x-llm-key"):
         overrides["llm_api_key"] = headers["x-llm-key"]
     if headers.get("x-embed-key"):
@@ -176,6 +194,6 @@ def config_from_headers(headers: dict, base_cfg: Config | None = None) -> Config
         overrides["mineru_api_token"] = headers["x-mineru-token"]
 
     if not overrides:
-        return base_cfg
+        return base_cfg or load_config()
 
     return load_config(**overrides)

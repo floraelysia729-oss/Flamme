@@ -89,10 +89,14 @@ def get_request_config(request: Request) -> Config:
 
 def get_request_config_or_default(request: Request) -> Config:
     """有配置 header 时返回 per-request Config，否则返回 cached 默认 Config"""
-    cfg = config_from_headers(dict(request.headers))
-    if cfg is get_config():
-        return cfg
-    return cfg
+    headers = dict(request.headers)
+    # 检查是否有任何插件配置 header
+    has_overrides = any(headers.get(h) for h in (
+        "x-vault-path", "x-llm-key", "x-embed-key", "x-brain-key", "x-mineru-token"
+    ))
+    if has_overrides:
+        return config_from_headers(headers)
+    return get_config()
 
 
 def build_llm_from_config(cfg: Config) -> DefaultLLM | None:

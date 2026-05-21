@@ -75,9 +75,9 @@ export class FlammeSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('MinerU Token')
-      .setDesc('PDF 精准解析')
-      .addText(text => text
-        .setPlaceholder('token...')
+      .setDesc('PDF 精准解析（完整 JWT，含两到三段 xxx.yyy.zzz）')
+      .addTextArea(text => text
+        .setPlaceholder('eyJ0eXBlI...')
         .setValue(this.plugin.settings.mineruApiToken)
         .onChange(async (value) => {
           this.plugin.settings.mineruApiToken = value;

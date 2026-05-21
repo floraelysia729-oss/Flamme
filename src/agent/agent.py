@@ -497,9 +497,12 @@ class Agent:
         return self._db._vault_path or ""
 
     def _get_graph_path(self) -> str:
-        from src.config import load_config
-        cfg = load_config()
-        return cfg.graph_json if Path(cfg.graph_json).exists() else ""
+        """返回 graph.json 路径（从 db 的 vault_path 派生，不调 load_config）"""
+        vault = self._db._vault_path or ""
+        if not vault:
+            return ""
+        gfile = Path(vault) / ".wiki" / "graph.json"
+        return str(gfile) if gfile.exists() else ""
 
     @staticmethod
     def _compute_hash(text: str) -> str:

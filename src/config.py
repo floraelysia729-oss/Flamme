@@ -122,9 +122,10 @@ def detect_vault() -> str:
     for child in sorted(current.iterdir()):
         if child.is_dir() and (child / ".obsidian").is_dir():
             return str(child)
-    # 3. 都没找到 → 警告，但仍然 fallback 到 cwd（兼容无 .obsidian 的纯文件夹）
+    # 3. 都没找到 → fallback 到 cwd（兼容无 .obsidian 的纯文件夹）
+    #    API 模式下 per-request config 会通过 X-Vault-Path 覆盖，此处 warning 是噪声
     import logging
-    logging.getLogger(__name__).warning(
+    logging.getLogger(__name__).debug(
         "未找到 .obsidian 目录，vault 将使用当前目录: %s。"
         "建议在 .env 中设置 LLM_WIKI_VAULT 指向你的 Obsidian vault。",
         current,

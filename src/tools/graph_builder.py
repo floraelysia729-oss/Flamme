@@ -85,11 +85,9 @@ class GraphBuilder(BaseTool):
         output_dir = params.get("output_dir", "")
         incremental = params.get("incremental", True)
 
-        # 默认输出目录
+        # 默认输出目录 — 从 vault_path 派生，不调 load_config()
         if not output_dir:
-            from src.config import load_config
-            cfg = load_config()
-            output_dir = cfg.wiki_dir
+            output_dir = str(Path(vault_path) / ".wiki")
 
         # 1. 扫描 .md 文件
         md_files = self._find_markdown_files(vault_path)

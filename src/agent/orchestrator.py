@@ -789,9 +789,10 @@ class Orchestrator:
         if action == "purge_graph_noise":
             import json as _json
             from pathlib import Path as _Path
-            from src.config import load_config as _load_config
-            cfg = _load_config()
-            gfile = _Path(cfg.graph_json)
+            vault = self._vault_path or ""
+            if not vault:
+                return {"error": "vault_path 未配置"}
+            gfile = _Path(vault) / ".wiki" / "graph.json"
             if not gfile.exists():
                 return {"error": "graph.json 不存在"}
 

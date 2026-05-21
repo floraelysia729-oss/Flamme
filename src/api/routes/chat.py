@@ -11,7 +11,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from src.api.deps import get_request_config, build_llm_from_config, build_brain_llm_from_config, get_config
+from src.api.deps import get_request_config, build_llm_from_config, build_brain_llm_from_config, get_config, get_request_config_or_default
 from src.config import Config
 
 
@@ -141,20 +141,20 @@ async def chat(req: ChatRequest, request: Request):
 
 
 @router.delete("/chat/{session_id}")
-async def clear_session(session_id: str):
+async def clear_session(session_id: str, request: Request):
     """清空会话历史"""
     from src.db.conversation import ConversationStore
-    cfg = get_config()
+    cfg = get_request_config_or_default(request)
     conv_store = ConversationStore(cfg.conversations_db)
     conv_store.clear_session(session_id)
     return {"ok": True}
 
 
 @router.get("/chat/sessions")
-async def list_sessions():
+async def list_sessions(request: Request):
     """返回会话列表"""
     from src.db.conversation import ConversationStore
-    cfg = get_config()
+    cfg = get_request_config_or_default(request)
     conv_store = ConversationStore(cfg.conversations_db)
     sessions = conv_store.list_sessions()
     conv_store.close()
@@ -162,10 +162,10 @@ async def list_sessions():
 
 
 @router.get("/chat/sessions/{session_id}")
-async def get_session(session_id: str):
+async def get_session(session_id: str, request: Request):
     """获取单个会话消息"""
     from src.db.conversation import ConversationStore
-    cfg = get_config()
+    cfg = get_request_config_or_default(request)
     conv_store = ConversationStore(cfg.conversations_db)
     messages = conv_store.get_session_messages(session_id)
     conv_store.close()

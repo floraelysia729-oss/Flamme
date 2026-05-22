@@ -49,9 +49,6 @@
           {#if ts.status === 'running'}
             <span class="flamme-tool-spinner"></span>
             <span class="flamme-tool-label">{ts.label} ...</span>
-            {#if ts.estimate}
-              <span class="flamme-tool-estimate">{ts.estimate}</span>
-            {/if}
             {#if ts.files && ts.files.length > 0}
               <div class="flamme-tool-files">
                 {#each ts.files.slice(0, 5) as f}

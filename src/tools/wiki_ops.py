@@ -9,6 +9,8 @@ import re
 from datetime import date
 from pathlib import Path
 
+from src.tools.paths import entities_dir
+
 import yaml
 
 from src.tools.interfaces import BaseTool, InterruptBehavior, ToolResult
@@ -190,10 +192,13 @@ class WikiCreatePageTool(BaseTool):
         if not vault:
             return ToolResult.err("vault 路径未配置")
 
-        subdir = {"entity": "entities", "topic": "topics",
-                  "comparison": "comparisons", "exploration": "explorations"}.get(page_type, "entities")
-        output_dir = Path(vault) / ".flamme" / subdir
-        output_dir.mkdir(parents=True, exist_ok=True)
+        if page_type == "entity":
+            output_dir = entities_dir(Path(vault))
+        else:
+            subdir = {"topic": "topics", "comparison": "comparisons",
+                      "exploration": "explorations"}.get(page_type, "topics")
+            output_dir = Path(vault) / ".flamme" / subdir
+            output_dir.mkdir(parents=True, exist_ok=True)
 
         safe_name = re.sub(r'[\\/:*?"<>|]', '_', title)
         file_path = output_dir / f"{safe_name}.md"
@@ -272,7 +277,7 @@ class WikiUpdatePageTool(BaseTool):
         if not p.exists():
             return ToolResult.err(f"文件不存在: {doc_path}")
 
-        existing = p.read_text(encoding="utf-8")
+        existing = p.read_text(encoding="utf-8", errors="replace")
 
         if append:
             new_content = existing.rstrip() + "\n\n" + content

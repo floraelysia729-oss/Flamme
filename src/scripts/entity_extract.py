@@ -42,7 +42,7 @@ SYSTEM_PROMPT = """你是知识管理助手。从给定笔记中提取核心实�
 # ── 实体名收集 ────────────────────────────────────────────────────────
 
 def get_existing_entity_names():
-    """扫描所有 .flamme/entities/ 获取已有实体标题"""
+    """扫描 vault/entities/ 获取已有实体标题"""
     return all_entity_files()
 
 

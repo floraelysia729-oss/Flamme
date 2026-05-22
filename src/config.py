@@ -80,7 +80,7 @@ class Config:
 
     @property
     def flamme_dir(self) -> str:
-        """Vault 级别 .flamme/ 目录（API 生成的实体/主题页）"""
+        """Vault 级别 .flamme/ 目录（API 生成的主题页等）"""
         d = Path(self.vault_path) / ".flamme"
         d.mkdir(parents=True, exist_ok=True)
         return str(d)

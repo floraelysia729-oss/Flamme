@@ -29,7 +29,7 @@ class MarkdownParser(BaseTool):
         if not file_path.exists():
             return ToolResult.err(f"文件不存在: {path}")
 
-        raw = file_path.read_text(encoding="utf-8")
+        raw = file_path.read_text(encoding="utf-8", errors="replace")
         metadata, content = self._parse(raw)
 
         return ToolResult.ok({

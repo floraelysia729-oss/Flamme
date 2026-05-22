@@ -439,12 +439,12 @@ class LintWorker(BaseWorker):
             if not conv_md.exists():
                 missing_converted.append(doc_path)
 
-            # pro 级：检查 entities/ 目录是否有内容（每个 source_dir 只检查一次）
+            # pro 级：检查 vault/entities/ 是否有实体页
             if level == "pro":
                 source_key = str(source_dir)
                 if source_key not in entity_dirs_checked:
                     entity_dirs_checked.add(source_key)
-                    ent_dir = entities_dir(source_dir)
+                    ent_dir = entities_dir(vault_path)
                     if ent_dir.exists() and not any(ent_dir.glob("*.md")):
                         missing_entities.append(str(source_dir.relative_to(vault_path)))
 
@@ -458,7 +458,7 @@ class LintWorker(BaseWorker):
         if missing_entities:
             issues.append(f"[实体缺失] {len(missing_entities)} 个 pro 级目录无实体页:")
             for d in missing_entities:
-                issues.append(f"  - {d}/.flamme/entities/ (空)")
+                issues.append(f"  - {d}/entities/ (空)")
         return issues
 
     def _check_graph_nodes(self, docs: list[dict]) -> list[str]:

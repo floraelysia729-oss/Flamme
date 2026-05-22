@@ -813,37 +813,29 @@ class Orchestrator:
             }
 
         if action == "purge_graph_noise":
-            import json as _json
-            from pathlib import Path as _Path
+            import re as _re
             vault = self._vault_path or ""
             if not vault:
                 return {"error": "vault_path 未配置"}
-            gfile = _Path(vault) / ".wiki" / "graph.json"
-            if not gfile.exists():
-                return {"error": "graph.json 不存在"}
 
-            raw = _json.loads(gfile.read_text(encoding="utf-8"))
-            nodes = raw.get("nodes", {})
-            edges = raw.get("edges", [])
-
-            import re as _re
+            # 通过 GraphStore 查询所有单字符噪声节点
+            from src.db.graph_store import GraphStore
+            gs = GraphStore(db._conn)
+            stats = gs.get_stats()
             noise_ids = set()
-            for nid, attrs in nodes.items():
-                label = attrs.get("label", nid)
-                if len(label) == 1 and _re.match(r'[\u4e00-\u9fff\w]', label):
-                    noise_ids.add(nid)
+            for ent in db._conn.execute("SELECT name FROM entities WHERE length(name) = 1").fetchall():
+                name = ent[0]
+                if _re.match(r'[\u4e00-\u9fff\w]', name):
+                    noise_ids.add(name)
 
             if not noise_ids:
                 return {"result": "没有发现噪声节点", "deleted": 0}
 
+            # 删除噪声节点及其关联边
             for nid in noise_ids:
-                del nodes[nid]
-            edges = [e for e in edges
-                     if e.get("source", "") not in noise_ids
-                     and e.get("target", "") not in noise_ids]
-            raw["nodes"] = nodes
-            raw["edges"] = edges
-            gfile.write_text(_json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8")
+                db._conn.execute("DELETE FROM relations WHERE source = ? OR target = ?", (nid, nid))
+                db._conn.execute("DELETE FROM entities WHERE name = ?", (nid,))
+            db._conn.commit()
 
             return {
                 "result": f"已从图谱中删除 {len(noise_ids)} 个噪声节点: {sorted(noise_ids)}",

@@ -42,9 +42,9 @@
 </script>
 
 <div data-message-index={i} class="flamme-msg-row" class:user={msg.role === 'user'} class:assistant={msg.role === 'assistant'}>
-  {#if msg.toolStatus && msg.toolStatus.length > 0}
+  {#if msg.toolStatus && msg.toolStatus.filter(ts => ts.status !== 'done').length > 0}
     <div class="flamme-tool-status-list">
-      {#each msg.toolStatus as ts}
+      {#each msg.toolStatus.filter(ts => ts.status !== 'done') as ts}
         <div class="flamme-tool-status flamme-tool-{ts.status}">
           {#if ts.status === 'running'}
             <span class="flamme-tool-spinner"></span>
@@ -65,12 +65,6 @@
           {:else if ts.status === 'progress'}
             <span class="flamme-tool-spinner"></span>
             <span class="flamme-tool-progress">{ts.message}</span>
-          {:else if ts.status === 'done'}
-            <span class="flamme-tool-check">&#10003;</span>
-            <span class="flamme-tool-label-done">{ts.label}</span>
-            {#if ts.elapsed != null}
-              <span class="flamme-tool-elapsed">{ts.elapsed}s</span>
-            {/if}
           {/if}
         </div>
       {/each}

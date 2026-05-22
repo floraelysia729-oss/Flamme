@@ -450,11 +450,7 @@ class Agent:
                 return f"错误: {result['error']}"
             return f"图谱构建完成: {result['nodes']} 节点, {result['edges']} 边, {result['communities']} 社区"
 
-        # 查询类操作需要 graph.json
-        graph_path = self._get_graph_path()
-        if not graph_path:
-            return "错误: vault 路径未配置"
-
+        # 查询类操作走 SQLite GraphStore
         if not graph_tool:
             return "错误: graph_query 未注册"
 
@@ -462,7 +458,7 @@ class Agent:
             query = params.get("query", "")
             if not query:
                 return "错误: 请指定查询节点"
-            result = self._exec("graph_query", {"graph_path": graph_path, "action": "neighbors", "node": query})
+            result = self._exec("graph_query", {"action": "neighbors", "node": query})
             if "error" in result:
                 return f"错误: {result['error']}"
             lines = [f"节点: {result['node']['label']} (度: {result['degree']})"]
@@ -471,7 +467,7 @@ class Agent:
             return "\n".join(lines)
 
         elif action == "isolates":
-            result = self._exec("graph_query", {"graph_path": graph_path, "action": "isolates"})
+            result = self._exec("graph_query", {"action": "isolates"})
             if "error" in result:
                 return f"错误: {result['error']}"
             if result["count"] == 0:
@@ -482,7 +478,7 @@ class Agent:
             return "\n".join(lines)
 
         elif action == "community":
-            result = self._exec("graph_query", {"graph_path": graph_path, "action": "community"})
+            result = self._exec("graph_query", {"action": "community"})
             if "error" in result:
                 return f"错误: {result['error']}"
             lines = [f"社区总数: {result['total']}"]
@@ -495,14 +491,6 @@ class Agent:
     def _get_vault_path(self) -> str:
         """返回 vault 路径（直接从 DB 读取）"""
         return self._db._vault_path or ""
-
-    def _get_graph_path(self) -> str:
-        """返回 graph.json 路径（从 db 的 vault_path 派生，不调 load_config）"""
-        vault = self._db._vault_path or ""
-        if not vault:
-            return ""
-        gfile = Path(vault) / ".wiki" / "graph.json"
-        return str(gfile) if gfile.exists() else ""
 
     @staticmethod
     def _compute_hash(text: str) -> str:

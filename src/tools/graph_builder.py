@@ -90,33 +90,13 @@ class GraphBuilder(BaseTool):
         if not output_dir:
             output_dir = str(Path(vault_path) / ".wiki")
 
-        # 1. 扫描 .md 文件 + entity 文件（任一有内容即可构建）
+        # 1. 扫描 .md 文件（含 vault/entities/ 下的 entity .md）
         md_files = self._find_markdown_files(vault_path)
-        md_nodes, md_edges = self._extract_all(md_files, incremental, output_dir, vault_path)
 
-        entity_files = self._find_entity_files(vault_path)
-        ent_nodes, ent_edges = self._extract_entities(entity_files, vault_path)
-
-        if not md_files and not entity_files:
+        if not md_files:
             return ToolResult.err(f"vault 中没有可用的内容文件: {vault_path}")
 
-        # 4. 合并：entity 数据优先填充 source_file / entity_file
-        all_nodes: dict[str, dict] = {n["id"]: n for n in md_nodes}
-        for n in ent_nodes:
-            nid = n["id"]
-            if nid in all_nodes:
-                existing = all_nodes[nid]
-                if n.get("source_file") and not existing.get("source_file"):
-                    existing["source_file"] = n["source_file"]
-                if n.get("entity_file"):
-                    existing["entity_file"] = n["entity_file"]
-                if n.get("type") == "entity":
-                    existing["type"] = "entity"
-            else:
-                all_nodes[nid] = n
-
-        nodes = list(all_nodes.values())
-        edges = md_edges + ent_edges
+        nodes, edges = self._extract_all(md_files, incremental, output_dir, vault_path)
 
         if not nodes:
             return ToolResult.err("没有提取到有效节点")
@@ -178,133 +158,18 @@ class GraphBuilder(BaseTool):
             files.append(p)
         return sorted(files)
 
-    def _find_entity_files(self, vault_path: str) -> list[Path]:
-        """查找 .flamme/entities/*.md 文件"""
-        vault = Path(vault_path)
-        return sorted(vault.rglob(".flamme/entities/*.md"))
-
-    def _extract_entities(self, entity_files: list[Path],
-                          vault_path: str) -> tuple[list[dict], list[dict]]:
-        """从 .flamme/entities/ 提取 entity 节点，逆向到源 PDF"""
-        nodes: dict[str, dict] = {}
-        edges: list[dict] = []
-        vault = Path(vault_path)
-
-        # ── Pass 1: 只建真实节点（entity + PDF document） ──
-        entity_metas: list[tuple[str, dict]] = []  # (node_id, metadata)
-        for fp in entity_files:
-            try:
-                raw = fp.read_text(encoding="utf-8")
-            except Exception:
-                continue
-            metadata, _ = self._parse_frontmatter(raw)
-
-            title = metadata.get("title", fp.stem)
-            node_id = _node_id(title)
-
-            # 解析 sources → 定位 PDF
-            sources = metadata.get("sources", [])
-            pdf_rel = ""
-            if sources and isinstance(sources, list):
-                first = str(sources[0]).strip("[]").strip()
-                src_dir = self._source_dir_for_entity(vault, fp)
-                pdf_file = src_dir / f"{first}.pdf"
-                if pdf_file.exists():
-                    pdf_rel = self._to_relpath(pdf_file, vault_path)
-                else:
-                    pdf_rel = self._to_relpath(fp, vault_path)
-
-            entity_rel = self._to_relpath(fp, vault_path)
-
-            if node_id not in nodes:
-                nodes[node_id] = {
-                    "id": node_id,
-                    "label": title,
-                    "type": "entity",
-                    "file_type": "entity",
-                    "source_file": pdf_rel,
-                    "entity_file": entity_rel,
-                    "tags": metadata.get("tags", []),
-                    "level": "",
-                    "content_hash": "",
-                }
-
-            # PDF 文档节点 + PDF → entity 边
-            for src in sources:
-                src_name = str(src).strip("[]").strip()
-                if not src_name:
-                    continue
-                src_id = _node_id(src_name)
-                src_dir = self._source_dir_for_entity(vault, fp)
-                pdf_file = src_dir / f"{src_name}.pdf"
-                pdf_path = self._to_relpath(pdf_file, vault_path) if pdf_file.exists() else ""
-                if src_id not in nodes:
-                    nodes[src_id] = {
-                        "id": src_id,
-                        "label": src_name,
-                        "type": "document",
-                        "file_type": "document",
-                        "source_file": pdf_path,
-                        "tags": [],
-                        "level": "",
-                        "content_hash": "",
-                    }
-                edges.append({
-                    "source": src_id,
-                    "target": node_id,
-                    "relation": "has_entity",
-                    "confidence": "EXTRACTED",
-                    "confidence_score": 1.0,
-                    "source_file": pdf_path,
-                })
-
-            entity_metas.append((node_id, metadata))
-
-        # ── Pass 2: related 边，只连到已有节点 ──
-        for node_id, metadata in entity_metas:
-            for rel in metadata.get("related", []):
-                if not isinstance(rel, str):
-                    continue
-                rel_name = rel.strip("[]").strip()
-                if not rel_name:
-                    continue
-                rel_id = _node_id(rel_name)
-                if rel_id in nodes:
-                    edges.append({
-                        "source": node_id,
-                        "target": rel_id,
-                        "relation": "related_to",
-                        "confidence": "EXTRACTED",
-                        "confidence_score": 0.8,
-                        "source_file": "",
-                    })
-
-        return list(nodes.values()), edges
-
-    @staticmethod
-    def _source_dir_for_entity(vault: Path, entity_file: Path) -> Path:
-        """从 .flamme/entities/X.md 逆向到源目录 (去掉 .flamme/entities/)"""
-        try:
-            from src.tools.paths import source_dir_for_path
-            return source_dir_for_path(vault, entity_file)
-        except ImportError:
-            # fallback: 手动剥离 .flamme
-            parts = entity_file.relative_to(vault).parts
-            if ".flamme" in parts:
-                idx = parts.index(".flamme")
-                return vault.joinpath(*parts[:idx])
-            return entity_file.parent
-
     def _extract_all(self, md_files: list[Path], incremental: bool,
                      output_dir: str, vault_path: str) -> tuple[list[dict], list[dict]]:
-        """从所有文件提取节点和边。incremental=True 时跳过未变更文件
+        """从所有 .md 文件（含 entity）统一提取节点和边。
 
         source_file 统一存储 vault 相对路径（正斜杠），保证可移植。
         两遍扫描：Pass 1 建所有节点，Pass 2 连边（解决文件序依赖）。
+
+        Entity 文件通过 frontmatter type 字段识别，sources 字段创建 entity→document 边。
         """
         nodes = {}  # id → node dict
-        # Pass 1 收集的提取数据，供 Pass 2 建边
-        pending_edges: list[tuple[str, str]] = []  # (source_node_id, rel_path)
+        # Pass 1 收集的边数据，供 Pass 2 建边
+        pending_edges: list[tuple[str, str, str, str]] = []  # (src_id, tgt_id, etype, rel_path)
 
         # 增量：加载已有 hash 映射，跳过未变更文件
         existing_hashes = {}
@@ -335,28 +200,53 @@ class GraphBuilder(BaseTool):
             title = metadata.get("title", fp.stem)
             node_id = _node_id(title)
 
+            # 判断是否为 entity（frontmatter type 或路径在 entities/ 下）
+            is_entity = metadata.get("type") in ("entity", "concept") or "entities" in fp.parts
+
             if node_id not in nodes:
                 nodes[node_id] = {
                     "id": node_id,
                     "label": title,
-                    "type": "document",
-                    "file_type": "document",
+                    "type": metadata.get("type", "concept" if is_entity else "document"),
+                    "file_type": "entity" if is_entity else "document",
                     "source_file": rel_path,
                     "tags": extract_tags(metadata, content),
                     "level": metadata.get("level", ""),
                     "content_hash": content_hash,
                 }
 
-            # 收集边数据（Pass 2 处理）
+            # 收集 wikilink 边（Pass 2 处理）
             for target in extract_wikilinks(content):
                 pending_edges.append((node_id, _node_id(target), "wikilink", rel_path))
 
+            # 收集 frontmatter related 边
             for rel in metadata.get("related", []):
                 if not isinstance(rel, str):
                     continue
                 rel_name = rel.strip("[]").strip()
                 if rel_name:
                     pending_edges.append((node_id, _node_id(rel_name), "frontmatter", rel_path))
+
+            # Entity sources → document 边
+            if is_entity:
+                for src in metadata.get("sources", []):
+                    src_name = str(src).strip("[]").strip()
+                    if not src_name:
+                        continue
+                    src_id = _node_id(src_name)
+                    # 为 source document 创建占位节点（如果尚不存在）
+                    if src_id not in nodes:
+                        nodes[src_id] = {
+                            "id": src_id,
+                            "label": src_name,
+                            "type": "document",
+                            "file_type": "document",
+                            "source_file": "",
+                            "tags": [],
+                            "level": "",
+                            "content_hash": "",
+                        }
+                    pending_edges.append((src_id, node_id, "has_entity", rel_path))
 
         # ── Pass 2: 连边（所有节点已存在） ──
         edges = []
@@ -365,7 +255,7 @@ class GraphBuilder(BaseTool):
                 edges.append({
                     "source": src_id,
                     "target": tgt_id,
-                    "relation": "related_to",
+                    "relation": _etype if _etype == "has_entity" else "related_to",
                     "confidence": "EXTRACTED",
                     "confidence_score": 1.0,
                     "source_file": rel_path,
@@ -507,7 +397,7 @@ class GraphBuilder(BaseTool):
                 wiki_path=node.get("source_file", ""),
                 community=community_map.get(nid, -1),
                 tags=",".join(node.get("tags", [])),
-                entity_file=node.get("entity_file", ""),
+                entity_file="",
                 source_file=node.get("source_file", ""),
                 level=node.get("level", ""),
                 content_hash=node.get("content_hash", ""),

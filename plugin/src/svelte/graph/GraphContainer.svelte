@@ -72,7 +72,7 @@
     panelEl.empty();
     panelEl.textContent = '加载文档...';
 
-    const previewPath = node.entity_file || node.source_file;
+    const previewPath = node.source_file;
     if (!previewPath) {
       panelEl.textContent = '该节点无关联源文件';
       return;

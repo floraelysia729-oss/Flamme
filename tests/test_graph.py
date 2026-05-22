@@ -429,3 +429,127 @@ def test_build_without_graphify():
             assert result.data["edges"] >= 1
     finally:
         _cleanup(vault)
+
+
+# ── Entity 统一扫描测试 ────────────────────────────────────────
+
+
+def _make_vault_with_entities():
+    """创建包含 vault/entities/ 的临时 vault"""
+    vault = tempfile.mkdtemp()
+
+    # 常规文档
+    Path(vault, "绪论.md").write_text("""---
+title: 1.绪论
+type: document
+tags: [AI]
+---
+
+# 1.绪论
+
+AI 的基础概念包括 [[图灵测试]] 和 [[符号主义AI]]。
+""", encoding="utf-8")
+
+    # Entity 文件在 vault/entities/
+    ent_dir = Path(vault, "entities")
+    ent_dir.mkdir()
+
+    (ent_dir / "图灵测试.md").write_text("""---
+title: 图灵测试
+type: entity
+sources:
+  - "[[1.绪论]]"
+tags: [AI, 测试]
+related:
+  - "[[符号主义AI]]"
+---
+
+# 图灵测试
+
+图灵测试是 [[AI]] 领域的经典测试。关联 [[符号主义AI]]。
+""", encoding="utf-8")
+
+    (ent_dir / "符号主义AI.md").write_text("""---
+title: 符号主义AI
+type: concept
+sources:
+  - "[[1.绪论]]"
+tags: [AI, 符号]
+---
+
+# 符号主义AI
+
+符号主义是 AI 的三大流派之一。
+""", encoding="utf-8")
+
+    return vault
+
+
+def test_entity_discovered_by_unified_scan():
+    """Entity .md 在 vault/entities/ 下应被 _find_markdown_files 自动发现"""
+    builder = GraphBuilder()
+    vault = _make_vault_with_entities()
+    try:
+        md_files = builder._find_markdown_files(vault)
+        names = [f.name for f in md_files]
+        assert "图灵测试.md" in names
+        assert "符号主义AI.md" in names
+        assert "绪论.md" in names
+    finally:
+        _cleanup(vault)
+
+
+def test_entity_type_from_frontmatter():
+    """Entity 节点的 type 应来自 frontmatter，而非硬编码"""
+    builder = GraphBuilder()
+    vault = _make_vault_with_entities()
+    output_dir = os.path.join(vault, ".wiki")
+    try:
+        result = builder.execute({"vault_path": vault, "output_dir": output_dir, "incremental": False, "export_json": True})
+        assert not result.is_error, result.error
+
+        # 读取 graph.json 检查节点类型
+        graph_json = os.path.join(output_dir, "graph.json")
+        data = json.loads(open(graph_json, encoding="utf-8").read())
+        node_types = {attrs.get("label"): attrs.get("type") for attrs in data["nodes"].values()}
+        assert node_types.get("图灵测试") == "entity"
+        assert node_types.get("符号主义AI") == "concept"
+    finally:
+        _cleanup(vault)
+
+
+def test_entity_sources_create_edges():
+    """Entity frontmatter sources 字段应创建 entity→document 的边"""
+    builder = GraphBuilder()
+    vault = _make_vault_with_entities()
+
+    db_dir = tempfile.mkdtemp()
+    db_path = os.path.join(db_dir, "test.db")
+    from src.db.client import SQLiteClient
+    db = SQLiteClient(db_path)
+    builder._db = db
+    output_dir = os.path.join(vault, ".wiki")
+
+    try:
+        result = builder.execute({"vault_path": vault, "output_dir": output_dir, "incremental": False, "export_json": True})
+        assert not result.is_error, result.error
+
+        # 通过 graph.json 检查边
+        graph_json = os.path.join(output_dir, "graph.json")
+        data = json.loads(open(graph_json, encoding="utf-8").read())
+
+        # 检查 source document 和 entity 之间有边（graphify 可能规范化 relation type）
+        edge_pairs = {
+            (e["source"], e["target"])
+            for e in data["edges"]
+        }
+        # 应该有 1.绪论 ↔ 图灵测试 和 1.绪论 ↔ 符号主义AI 的连接
+        has_link_to_turing = any(
+            "绪论" in src and "图灵" in tgt or "绪论" in tgt and "图灵" in src
+            for src, tgt in edge_pairs
+        )
+        assert has_link_to_turing, f"Expected edge between 绪论 and 图灵测试, got: {edge_pairs}"
+    finally:
+        db.close()
+        _cleanup(vault)
+        shutil.rmtree(db_dir, ignore_errors=True)

@@ -47,8 +47,6 @@ def _to_force_graph_format(data: dict) -> dict:
             "val": degree_map.get(label, 0),
             "source_file": n.get("source_file", n.get("wiki_path", "")),
         }
-        if n.get("entity_file"):
-            node_item["entity_file"] = n["entity_file"]
         nodes.append(node_item)
 
     edges = []

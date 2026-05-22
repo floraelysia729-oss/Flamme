@@ -35,7 +35,7 @@ from pathlib import Path
 
 sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)
 
-from src.scripts import VAULT, entities_dir, source_dir_from_vault_rel
+from src.scripts import VAULT, entities_dir
 
 ENTITY_TEMPLATE = """---
 title: "{title}"
@@ -67,12 +67,8 @@ related:
 """
 
 
-def generate_entities(data: dict, source_dir_arg: str | None = None):
-    """从 JSON 数据生成 entity 页
-
-    source_dir_arg: 可选的源文件夹路径（vault 相对路径如 'pro/矩阵论'），
-                    决定 entity 写入哪个 .flamme/entities/
-    """
+def generate_entities(data: dict):
+    """从 JSON 数据生成 entity 页，写入 vault/entities/"""
     entities = data.get("entities", [])
     if not entities:
         print("No entities found in input.")
@@ -87,14 +83,7 @@ def generate_entities(data: dict, source_dir_arg: str | None = None):
             skipped += 1
             continue
 
-        # 确定目标目录：优先用 source_dir_arg，否则从 entity 的 source 字段推算
-        if source_dir_arg:
-            sdir = VAULT / source_dir_arg
-        else:
-            source_ref = ent.get("source", "")
-            sdir = source_dir_from_vault_rel(source_ref) if source_ref else VAULT
-
-        out_path = entities_dir(sdir) / f"{title}.md"
+        out_path = entities_dir(VAULT) / f"{title}.md"
 
         # 检查是否已存在
         if out_path.exists():
@@ -175,7 +164,7 @@ def main():
             data = json.loads(input_path.read_text(encoding="utf-8"))
         else:
             data = json.loads(args.input)
-        generate_entities(data, args.source_dir)
+        generate_entities(data)
 
     elif args.command == "template":
         print_template(args.topic, args.source)

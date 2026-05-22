@@ -17,6 +17,7 @@ export interface GraphNode {
   community?: number;
   val?: number;
   source_file?: string;
+  /** @deprecated use source_file — entity files now use source_file directly */
   entity_file?: string;
   // Hierarchy fields (synthetic group nodes)
   isGroup?: boolean;

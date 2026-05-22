@@ -26,9 +26,10 @@ def ocr_dir(source_dir: Path) -> Path:
     return d
 
 
-def entities_dir(source_dir: Path) -> Path:
-    d = flamme_dir(source_dir) / "entities"
-    d.mkdir(exist_ok=True)
+def entities_dir(vault_path: Path) -> Path:
+    """Vault 级 entity 目录 — vault/entities/"""
+    d = vault_path / "entities"
+    d.mkdir(parents=True, exist_ok=True)
     return d
 
 
@@ -44,13 +45,11 @@ def all_flamme_dirs(vault_path: Path) -> list[Path]:
 
 
 def all_entity_files(vault_path: Path) -> set[str]:
-    """扫描所有 .flamme/entities/ 下的 entity 名"""
-    names = set()
-    for fd in all_flamme_dirs(vault_path):
-        ed = fd / "entities"
-        if ed.exists():
-            names.update(f.stem for f in ed.glob("*.md"))
-    return names
+    """扫描 vault/entities/ 下的 entity 名"""
+    ed = entities_dir(vault_path)
+    if ed.exists():
+        return {f.stem for f in ed.glob("*.md")}
+    return set()
 
 
 def source_dir_for_path(vault_path: Path, file_path: Path) -> Path:

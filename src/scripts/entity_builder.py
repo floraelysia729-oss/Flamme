@@ -126,12 +126,16 @@ def _filter_terms(terms: list[str]) -> list[str]:
     return filtered[:5]
 
 def find_entity_path(term: str, vault_path: Path | None = None) -> Path | None:
-    """在全 vault 中查找已有实体文件"""
+    """在 vault/entities/ 中查找已有实体文件"""
     vp = vault_path or VAULT
+    candidate = entities_dir(vp) / f"{_safe_filename(term)}.md"
+    if candidate.exists():
+        return candidate
+    # fallback: 旧路径 .flamme/entities/（兼容迁移前数据）
     for fd in all_flamme_dirs(vp):
-        candidate = fd / "entities" / f"{_safe_filename(term)}.md"
-        if candidate.exists():
-            return candidate
+        legacy = fd / "entities" / f"{_safe_filename(term)}.md"
+        if legacy.exists():
+            return legacy
     return None
 
 
@@ -619,9 +623,9 @@ def build_from_file(filepath: Path, all_sources: list[Path],
                 existing_entity_text = strip_frontmatter(old_text)
                 write_path = existing_path
             except Exception:
-                write_path = entities_dir(source_dir) / f"{_safe_filename(term)}.md"
+                write_path = entities_dir(vp) / f"{_safe_filename(term)}.md"
         else:
-            write_path = entities_dir(source_dir) / f"{_safe_filename(term)}.md"
+            write_path = entities_dir(vp) / f"{_safe_filename(term)}.md"
 
         if dry_run:
             print(f"    [dry-run] {term}: {len(source_names)} sources, {total_sents} sentences, "

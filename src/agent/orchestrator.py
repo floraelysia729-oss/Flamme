@@ -285,6 +285,24 @@ WORKER_DISPATCH = {
     "wiki_batch_tags": "batch_tag",
 }
 
+# 工具元数据 — 用于前端进度展示
+TOOL_META = {
+    "wiki_search":      {"label": "搜索知识库",   "estimate": "~2s"},
+    "wiki_read_page":   {"label": "读取页面",     "estimate": "~1s"},
+    "wiki_create_page": {"label": "创建页面",     "estimate": "~1s"},
+    "wiki_update_page": {"label": "更新页面",     "estimate": "~1s"},
+    "graph_query":      {"label": "查询图谱",     "estimate": "~2s"},
+    "entity_extract":   {"label": "提取实体",     "estimate": "~3s"},
+    "wiki_sync":        {"label": "同步知识库",   "estimate": "~30-60s"},
+    "document_ingest":  {"label": "摄入文档",     "estimate": "~40-80s"},
+    "wiki_lint":        {"label": "检查完整性",   "estimate": "~10s"},
+    "wiki_batch_tags":  {"label": "批量打标签",   "estimate": "~20s"},
+    "wiki_cleanup":     {"label": "清理知识库",   "estimate": "~5s"},
+    "pdf_parse":        {"label": "解析 PDF",     "estimate": "~30-60s"},
+    "excalidraw_ocr":   {"label": "OCR 识别",     "estimate": "~20s"},
+    "glossary":         {"label": "生成术语表",   "estimate": "~10s"},
+}
+
 
 SYSTEM_PROMPT = """你是 LLM-WIKI 知识库的 AI 助手。你的职责不仅是回答问题，更是主动维护和丰富知识库。
 
@@ -546,21 +564,30 @@ class Orchestrator:
                         pass
                 if file_names:
                     est_min = max(1, len(file_names) * 60 // 60)
-                    yield (f"\n> 📋 即将处理 {len(file_names)} 个文件"
-                           f"（每个约 40~80 秒，预计共 {est_min} 分钟）:\n")
-                    for fn in file_names[:8]:
-                        yield f">   - {fn}\n"
-                    if len(file_names) > 8:
-                        yield f">   ... 等 {len(file_names) - 8} 个文件\n"
-                    yield ">\n"
+                    yield {
+                        "__type__": "tool_status", "status": "running",
+                        "name": "document_ingest", "label": f"批量摄入 {len(file_names)} 个文件",
+                        "estimate": f"~{est_min} 分钟",
+                        "files": file_names[:10],
+                    }
 
             for idx in sorted(tool_calls_acc.keys()):
                 tc = tool_calls_acc[idx]
+                tool_name = tc["name"]
+                meta = TOOL_META.get(tool_name, {})
+                label = meta.get("label", tool_name)
+                estimate = meta.get("estimate", "")
+
+                # 发送工具开始事件
+                yield {
+                    "__type__": "tool_status", "status": "running",
+                    "name": tool_name, "label": label, "estimate": estimate,
+                }
 
                 t0 = time.time()
 
                 # 检查工具是否支持流式进度
-                tool_obj = self._tools.get(tc["name"]) if self._tools else None
+                tool_obj = self._tools.get(tool_name) if self._tools else None
                 use_stream = tool_obj is not None and hasattr(tool_obj, "stream_execute")
 
                 if use_stream:
@@ -569,15 +596,15 @@ class Orchestrator:
                     result = self._execute_tool_dict(tc)
 
                 elapsed = time.time() - t0
-                logger.info("工具 %s 返回 (%.1fs): %s", tc["name"], elapsed,
+                logger.info("工具 %s 返回 (%.1fs): %s", tool_name, elapsed,
                             _safe_json_dumps(result, ensure_ascii=False)[:200])
 
-                # 用户可见输出：只对耗时操作和批量操作显示进度
-                tool_name = tc["name"]
-                is_worker = tool_name in WORKER_DISPATCH
-
-                if is_worker and elapsed > 3:
-                    yield f"\n> ✅ {tool_name} 完成 ({elapsed:.1f}s)\n"
+                # 发送工具完成事件
+                yield {
+                    "__type__": "tool_status", "status": "done",
+                    "name": tool_name, "label": label,
+                    "elapsed": round(elapsed, 1),
+                }
 
                 # wiki_batch_tags 特殊输出
                 if tool_name == "wiki_batch_tags" and isinstance(result, dict):
@@ -592,7 +619,6 @@ class Orchestrator:
                     elif tool_name in ("wiki_read_page", "wiki_update_page",
                                        "wiki_search", "wiki_list_pages",
                                        "wiki_link", "graph_query"):
-                        # 查询/检索类工具报错是正常的（页面不存在等），LLM 会自行处理
                         logger.info("查询工具 %s 返回错误（静默）: %s", tool_name, error_msg[:120])
                     else:
                         yield f"\n[tool error] {error_msg}\n"
@@ -924,7 +950,11 @@ class Orchestrator:
                 continue
             if msg is None:
                 break
-            yield f"> 📄 {msg}\n"
+            yield {
+                "__type__": "tool_status", "status": "progress",
+                "name": tc["name"], "label": TOOL_META.get(tc["name"], {}).get("label", tc["name"]),
+                "message": msg,
+            }
 
         thread.join(timeout=10)
 

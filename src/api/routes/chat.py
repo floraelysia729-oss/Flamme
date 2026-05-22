@@ -111,6 +111,10 @@ def _sse_stream(question: str, session_id: str, cfg: Config,
             if isinstance(token, dict):
                 if token.get("__type__") == "suggested_questions":
                     yield f"data: {json.dumps({'type': 'suggested_questions', 'questions': token['questions']}, ensure_ascii=False)}\n\n"
+                elif token.get("__type__") == "tool_status":
+                    payload = {k: v for k, v in token.items() if k != "__type__"}
+                    payload["type"] = "tool_status"
+                    yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
                 continue
             if isinstance(token, str) and token.startswith("__ERROR__"):
                 yield f"data: {json.dumps({'type': 'error', 'content': token[9:]}, ensure_ascii=False)}\n\n"

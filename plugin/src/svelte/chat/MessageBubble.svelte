@@ -42,10 +42,37 @@
 </script>
 
 <div data-message-index={i} class="flamme-msg-row" class:user={msg.role === 'user'} class:assistant={msg.role === 'assistant'}>
-  {#if msg.toolCalls && msg.toolCalls.length > 0}
-    <div class="flamme-tool-badges">
-      {#each msg.toolCalls as tc}
-        <span class="flamme-tool-badge">{tc}</span>
+  {#if msg.toolStatus && msg.toolStatus.length > 0}
+    <div class="flamme-tool-status-list">
+      {#each msg.toolStatus as ts}
+        <div class="flamme-tool-status flamme-tool-{ts.status}">
+          {#if ts.status === 'running'}
+            <span class="flamme-tool-spinner"></span>
+            <span class="flamme-tool-label">{ts.label} ...</span>
+            {#if ts.estimate}
+              <span class="flamme-tool-estimate">{ts.estimate}</span>
+            {/if}
+            {#if ts.files && ts.files.length > 0}
+              <div class="flamme-tool-files">
+                {#each ts.files.slice(0, 5) as f}
+                  <span class="flamme-tool-file">{f}</span>
+                {/each}
+                {#if ts.files.length > 5}
+                  <span class="flamme-tool-file">+{ts.files.length - 5} more</span>
+                {/if}
+              </div>
+            {/if}
+          {:else if ts.status === 'progress'}
+            <span class="flamme-tool-spinner"></span>
+            <span class="flamme-tool-progress">{ts.message}</span>
+          {:else if ts.status === 'done'}
+            <span class="flamme-tool-check">&#10003;</span>
+            <span class="flamme-tool-label-done">{ts.label}</span>
+            {#if ts.elapsed != null}
+              <span class="flamme-tool-elapsed">{ts.elapsed}s</span>
+            {/if}
+          {/if}
+        </div>
       {/each}
     </div>
   {/if}

@@ -1,11 +1,30 @@
 /** Open note in Obsidian and highlight paragraph */
-import { App, MarkdownView, Editor } from 'obsidian';
+import { App, MarkdownView, Editor, Notice, TFile } from 'obsidian';
+
+/** 在 vault 中解析 wikilink 目标文件 */
+function resolveWikilinkTarget(app: App, noteName: string): TFile | null {
+  // 直接匹配：noteName 可能是 "图灵测试" 或 "entities/图灵测试"
+  const direct = app.vault.getAbstractFileByPath(`${noteName}.md`);
+  if (direct instanceof TFile) return direct;
+
+  // 搜索所有 .md 文件，匹配文件名（不含路径）
+  const files = app.vault.getMarkdownFiles();
+  const match = files.find(f => f.basename === noteName);
+  return match ?? null;
+}
 
 export async function openAndHighlight(
   app: App,
   noteName: string,
   searchText?: string,
 ): Promise<void> {
+  // 检查文件是否存在，避免 Obsidian 自动创建空 note
+  const target = resolveWikilinkTarget(app, noteName);
+  if (!target) {
+    new Notice(`"${noteName}" 尚未收录为笔记`);
+    return;
+  }
+
   // 1. Open the note using Obsidian's native wikilink resolution
   await app.workspace.openLinkText(noteName, '', false);
 

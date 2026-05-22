@@ -84,7 +84,7 @@
 
       for await (const event of streamChat(text, sessionId, controller.signal, mode, plugin.settings.backendUrl, mode === 'learn' ? selectedFiles : undefined, buildAuthHeaders(plugin.settings, getVaultPath()))) {
         if (abortController !== controller) return;
-        
+
         if (avatarState === 'think') avatarState = 'answer';
 
         if (event.type === 'token' && event.content) {
@@ -93,6 +93,17 @@
           messages[idx + 1].content = fullContent;
           messages[idx + 1].tokenCount = tokens;
           messages[idx + 1].duration = Math.round((Date.now() - startTime) / 100) / 10;
+        } else if (event.type === 'tool_status') {
+          avatarState = 'look';
+          if (!messages[idx + 1].toolStatus) messages[idx + 1].toolStatus = [];
+          const list = messages[idx + 1].toolStatus!;
+          const last = list[list.length - 1];
+          // 同名工具的 progress 更新最后一个 running 条目
+          if (last && last.name === event.name && last.status === 'running' && event.status === 'progress') {
+            last.message = event.message;
+          } else {
+            list.push(event as any);
+          }
         } else if (event.type === 'tool_call' && event.content) {
           if (!messages[idx + 1].toolCalls) messages[idx + 1].toolCalls = [];
           messages[idx + 1].toolCalls!.push(event.content);

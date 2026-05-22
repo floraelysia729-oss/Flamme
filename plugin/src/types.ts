@@ -1,9 +1,20 @@
 /** Flamme plugin shared types */
 
+export interface ToolStatus {
+  name: string;
+  label: string;
+  status: 'running' | 'progress' | 'done';
+  estimate?: string;
+  elapsed?: number;
+  message?: string;
+  files?: string[];
+}
+
 export interface Message {
   role: 'user' | 'assistant';
   content: string;
   toolCalls?: string[];
+  toolStatus?: ToolStatus[];
   duration?: number;
   tokenCount?: number;
   suggestedQuestions?: string[];

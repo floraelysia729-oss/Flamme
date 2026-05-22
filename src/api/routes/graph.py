@@ -1,87 +1,54 @@
-"""图谱路由 — 数据、邻居、统计、构建"""
+"""图谱路由 — 数据、邻居、统计、构建
 
-import json
-from collections import deque
-from pathlib import Path
+查询来源：SQLite entities/relations 表（通过 GraphStore）
+"""
 
 from fastapi import APIRouter, Request
 
 from src.api.deps import get_request_config_or_default
+from src.db.client import SQLiteClient
+from src.db.graph_store import GraphStore
 
 router = APIRouter(prefix="/graph")
 
 
-def _graph_path(cfg) -> str:
-    return cfg.graph_json if Path(cfg.graph_json).exists() else ""
-
-
-def _load_graph(cfg) -> dict:
-    gp = _graph_path(cfg)
-    if not gp:
-        return {"nodes": {}, "edges": [], "communities": {}}
-    data = json.loads(Path(gp).read_text(encoding="utf-8"))
-    raw_nodes = data.get("nodes", [])
-
-    # Auto-detect: graphify gives nodes as list [{id,...}], legacy gives dict {id: {...}}
-    if isinstance(raw_nodes, list):
-        nodes_dict: dict = {}
-        for n in raw_nodes:
-            nid = n.get("id", "")
-            nodes_dict[nid] = {
-                "label": n.get("label", nid),
-                "type": n.get("file_type", n.get("type", "document")),
-                "community": n.get("community"),
-                "source_file": n.get("source_file", ""),
-                "level": "",
-                "tags": [],
-            }
-        raw_links = data.get("links", data.get("edges", []))
-        edges = [{"source": l.get("source", ""), "target": l.get("target", ""),
-                  "relation": l.get("relation", "")} for l in raw_links]
-        communities: dict = {}
-        for nid, attrs in nodes_dict.items():
-            cid = attrs.get("community")
-            if cid is not None:
-                communities.setdefault(cid, []).append(nid)
-        return {"nodes": nodes_dict, "edges": edges, "communities": communities}
-
-    return {
-        "nodes": raw_nodes,
-        "edges": data.get("edges", []),
-        "communities": data.get("communities", {}),
-    }
+def _graph_store(cfg) -> GraphStore:
+    """从 per-request Config 构建 GraphStore"""
+    db = SQLiteClient(cfg.db_path, vault_path=cfg.vault_path)
+    return GraphStore(db._conn)
 
 
 def _to_force_graph_format(data: dict) -> dict:
-    """将 graph.json 邻接表格式转换为 react-force-graph-2d 标准格式"""
-    nodes_dict = data.get("nodes", {})
+    """将 GraphStore 返回的 {nodes, edges} 转换为 react-force-graph-2d 标准格式"""
+    nodes_list = data.get("nodes", [])
     edges_list = data.get("edges", [])
 
-    # 构建邻接关系以计算 degree
-    degree_map: dict[str, int] = {}
+    # 计算 degree
+    degree_map: dict[int, int] = {}
     for e in edges_list:
+        # GraphStore 返回 source/target 是 name 字符串
         src = e.get("source", "")
         tgt = e.get("target", "")
         degree_map[src] = degree_map.get(src, 0) + 1
         degree_map[tgt] = degree_map.get(tgt, 0) + 1
 
     nodes = []
-    for nid, attrs in nodes_dict.items():
-        if degree_map.get(nid, 0) == 0:
+    for n in nodes_list:
+        label = n.get("name", str(n.get("id", "")))
+        if degree_map.get(label, 0) == 0:
             continue
         node_item = {
-            "id": nid,
-            "label": attrs.get("label", nid),
-            "type": attrs.get("type", "document"),
-            "level": attrs.get("level", ""),
-            "tags": attrs.get("tags", []),
-            "community": attrs.get("community", -1),
-            "val": degree_map[nid],
-            "source_file": attrs.get("source_file", ""),
+            "id": label,
+            "label": label,
+            "type": n.get("type", "document"),
+            "level": n.get("level", ""),
+            "tags": n.get("tags", "").split(",") if n.get("tags") else [],
+            "community": n.get("community", -1),
+            "val": degree_map.get(label, 0),
+            "source_file": n.get("source_file", n.get("wiki_path", "")),
         }
-        entity_file = attrs.get("entity_file", "")
-        if entity_file:
-            node_item["entity_file"] = entity_file
+        if n.get("entity_file"):
+            node_item["entity_file"] = n["entity_file"]
         nodes.append(node_item)
 
     edges = []
@@ -89,7 +56,7 @@ def _to_force_graph_format(data: dict) -> dict:
         edges.append({
             "source": e.get("source", ""),
             "target": e.get("target", ""),
-            "label": e.get("relation", ""),
+            "label": e.get("relation_type", ""),
         })
 
     return {"nodes": nodes, "edges": edges}
@@ -99,107 +66,44 @@ def _to_force_graph_format(data: dict) -> dict:
 def get_full_graph(request: Request):
     """返回标准 {nodes, edges} JSON — react-force-graph-2d 格式"""
     cfg = get_request_config_or_default(request)
-    data = _load_graph(cfg)
+    store = _graph_store(cfg)
+    data = store.get_full_graph()
     return _to_force_graph_format(data)
 
 
 @router.get("/subgraph")
 def get_subgraph(request: Request, entity: str, depth: int = 1):
-    """返回以某实体为中心的局部子图（BFS）"""
+    """返回以某实体为中心的局部子图"""
     cfg = get_request_config_or_default(request)
-    data = _load_graph(cfg)
-    nodes_dict = data.get("nodes", {})
-    edges_list = data.get("edges", [])
-
-    # 找匹配节点
-    matched_id = None
-    entity_lower = entity.lower()
-    for nid, attrs in nodes_dict.items():
-        if nid.lower() == entity_lower or attrs.get("label", "").lower() == entity_lower:
-            matched_id = nid
-            break
-
-    if not matched_id:
-        return {"nodes": [], "edges": []}
-
-    # BFS 扩展
-    visited = {matched_id}
-    queue_bfs = deque([(matched_id, 0)])
-
-    while queue_bfs:
-        current, d = queue_bfs.popleft()
-        if d >= depth:
-            continue
-        for e in edges_list:
-            src, tgt = e.get("source", ""), e.get("target", "")
-            neighbor = None
-            if src == current:
-                neighbor = tgt
-            elif tgt == current:
-                neighbor = src
-            if neighbor and neighbor not in visited:
-                visited.add(neighbor)
-                queue_bfs.append((neighbor, d + 1))
-
-    # 过滤节点和边
-    filtered_nodes = {nid: attrs for nid, attrs in nodes_dict.items() if nid in visited}
-    filtered_edges = [
-        e for e in edges_list
-        if e.get("source", "") in visited and e.get("target", "") in visited
-    ]
-
-    return _to_force_graph_format({"nodes": filtered_nodes, "edges": filtered_edges})
+    store = _graph_store(cfg)
+    data = store.bfs_subgraph(entity, depth)
+    return _to_force_graph_format(data)
 
 
 @router.get("/data")
 def get_graph_data(request: Request):
-    """原始邻接表格式（向后兼容）"""
+    """原始格式（向后兼容）"""
     cfg = get_request_config_or_default(request)
-    return _load_graph(cfg)
+    store = _graph_store(cfg)
+    return store.get_full_graph()
 
 
 @router.get("/neighbors/{node:path}")
 def get_neighbors(request: Request, node: str):
     cfg = get_request_config_or_default(request)
-    graph = _load_graph(cfg)
-    nodes = graph.get("nodes", {})
-    edges = graph.get("edges", [])
-
-    matched = None
-    for nid, attrs in nodes.items():
-        if nid == node or attrs.get("label") == node:
-            matched = {"id": nid, **attrs}
-            break
-    if not matched:
-        return {"node": node, "neighbors": [], "degree": 0, "error": "not found"}
-
-    neighbors = []
-    node_id = matched.get("id", node)
-    for e in edges:
-        if e.get("source") == node_id:
-            target_attrs = nodes.get(e.get("target", ""), {})
-            neighbors.append({"id": e["target"], "label": target_attrs.get("label", ""),
-                              "relation": e.get("relation", "")})
-        elif e.get("target") == node_id:
-            src_attrs = nodes.get(e.get("source", ""), {})
-            neighbors.append({"id": e["source"], "label": src_attrs.get("label", ""),
-                              "relation": e.get("relation", "")})
-    return {"node": {"id": node_id, "label": matched.get("label", node)},
-            "neighbors": neighbors, "degree": len(neighbors)}
+    store = _graph_store(cfg)
+    return store.get_neighbors(node)
 
 
 @router.get("/stats")
 def get_graph_stats(request: Request):
     cfg = get_request_config_or_default(request)
-    graph = _load_graph(cfg)
-    return {"nodes": len(graph.get("nodes", {})),
-            "edges": len(graph.get("edges", [])),
-            "communities": len(graph.get("communities", {}))}
+    store = _graph_store(cfg)
+    return store.get_stats()
 
 
 @router.post("/build")
 def build_graph(request: Request):
-    from src.db.client import SQLiteClient
     from src.tools.embedding_store import EmbeddingStore
     from src.tools.bootstrap import build_registry
     from src.api.deps import build_llm_from_config
@@ -220,7 +124,9 @@ def build_graph(request: Request):
                 return {"error": result.error}
         elif isinstance(result, dict) and "error" in result:
             return {"error": result["error"]}
-        return get_full_graph(request)
+        # 构建完成后从 DB 读取返回
+        store = GraphStore(db._conn)
+        return _to_force_graph_format(store.get_full_graph())
     except Exception as e:
         import traceback
         return {"error": f"{type(e).__name__}: {e}", "traceback": traceback.format_exc()}

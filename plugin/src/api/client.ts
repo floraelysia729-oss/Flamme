@@ -45,7 +45,7 @@ export class ApiClient {
 
   // Chat
   deleteSession(sessionId: string) {
-    return fetch(`${this.baseUrl}/chat/${sessionId}`, { method: 'DELETE' });
+    return this.fetchJSON<void>(`/chat/${sessionId}`, { method: 'DELETE' });
   }
   getSessions() {
     return this.fetchJSON<{ sessions: any[] }>('/chat/sessions');

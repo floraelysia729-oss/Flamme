@@ -44,6 +44,12 @@ CREATE TABLE IF NOT EXISTS entities (
   name TEXT UNIQUE NOT NULL,
   type TEXT,
   wiki_path TEXT,
+  community INTEGER DEFAULT -1,
+  tags TEXT DEFAULT '',
+  entity_file TEXT DEFAULT '',
+  source_file TEXT DEFAULT '',
+  level TEXT DEFAULT '',
+  content_hash TEXT DEFAULT '',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS relations (
@@ -119,4 +125,10 @@ CREATE TABLE IF NOT EXISTS glossary (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   UNIQUE(term, domain)
+);
+
+-- 增量迁移：已有 DB 补充 entities 新列（幂等，IF NOT EXISTS 通过 pragma 防重）
+-- SQLite 不支持 IF NOT EXISTS for ALTER TABLE，用 pragma 检测列是否存在
+CREATE TABLE IF NOT EXISTS _schema_migrations (
+  migration TEXT PRIMARY KEY
 );

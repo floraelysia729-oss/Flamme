@@ -12,6 +12,7 @@ from src.tools.graph_query import GraphQueryTool
 from src.tools.pdf_parser import PDFParserTool
 from src.tools.excalidraw_ocr import ExcalidrawOCRTool
 from src.tools.glossary import GlossaryTool
+from src.db.graph_store import GraphStore
 
 
 def build_registry(config, db, llm=None, embedding_store=None) -> ToolRegistry:
@@ -40,7 +41,8 @@ def build_registry(config, db, llm=None, embedding_store=None) -> ToolRegistry:
     gb = GraphBuilder()
     gb._db = db
     registry.register(gb)
-    registry.register(GraphQueryTool(default_graph_path=config.graph_json))
+    graph_store = GraphStore(db._conn)
+    registry.register(GraphQueryTool(graph_store=graph_store))
 
     # --- Wiki 工具（需要 db + 可选 llm/embedding） ---
     registry.register(WikiSearchTool(db=db, embedding_store=embedding_store, llm=llm))

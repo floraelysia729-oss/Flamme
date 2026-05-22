@@ -84,6 +84,7 @@ class GraphBuilder(BaseTool):
 
         output_dir = params.get("output_dir", "")
         incremental = params.get("incremental", True)
+        export_json = params.get("export_json", False)
 
         # 默认输出目录 — 从 vault_path 派生，不调 load_config()
         if not output_dir:
@@ -122,20 +123,23 @@ class GraphBuilder(BaseTool):
         if not nodes:
             return ToolResult.err("没有提取到有效节点")
 
-        # 5. 写入 SQLite
-        self._write_to_sqlite(nodes, edges)
-
-        # 6. 构建 NetworkX 图 + 社区检测
+        # 5. 构建 NetworkX 图 + 社区检测
         graph, communities = self._build_graph(nodes, edges)
 
-        # 7. 导出
+        # 6. 写入 SQLite（主目标，写入全字段含 community）
+        node_to_community = {}
+        for cid, node_list in communities.items():
+            for nid in node_list:
+                node_to_community[nid] = cid
+        self._write_to_sqlite(nodes, edges, node_to_community)
+
+        # 7. 可选导出 graph.json + graph.mermaid
         Path(output_dir).mkdir(parents=True, exist_ok=True)
-
-        json_path = str(Path(output_dir) / "graph.json")
-        mermaid_path = str(Path(output_dir) / "graph.mermaid")
-
-        self._write_json(graph, communities, json_path)
-        self._write_mermaid(graph, communities, mermaid_path)
+        if export_json:
+            json_path = str(Path(output_dir) / "graph.json")
+            mermaid_path = str(Path(output_dir) / "graph.mermaid")
+            self._write_json(graph, communities, json_path)
+            self._write_mermaid(graph, communities, mermaid_path)
 
         return ToolResult.ok({
             "nodes": graph.number_of_nodes(),
@@ -219,6 +223,7 @@ class GraphBuilder(BaseTool):
                     "id": node_id,
                     "label": title,
                     "type": "entity",
+                    "file_type": "entity",
                     "source_file": pdf_rel,
                     "entity_file": entity_rel,
                     "tags": metadata.get("tags", []),
@@ -240,6 +245,7 @@ class GraphBuilder(BaseTool):
                         "id": src_id,
                         "label": src_name,
                         "type": "document",
+                        "file_type": "document",
                         "source_file": pdf_path,
                         "tags": [],
                         "level": "",
@@ -333,6 +339,7 @@ class GraphBuilder(BaseTool):
                     "id": node_id,
                     "label": title,
                     "type": "document",
+                    "file_type": "document",
                     "source_file": rel_path,
                     "tags": extract_tags(metadata, content),
                     "level": metadata.get("level", ""),
@@ -491,15 +498,24 @@ class GraphBuilder(BaseTool):
 
         Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-    def _write_to_sqlite(self, nodes: list[dict], edges: list[dict]) -> None:
-        """将提取的实体和关系写入 SQLite"""
+    def _write_to_sqlite(self, nodes: list[dict], edges: list[dict],
+                         node_to_community: dict[str, int] | None = None) -> None:
+        """将提取的实体和关系写入 SQLite（全字段）"""
         if not self._db:
             return
+        community_map = node_to_community or {}
         for node in nodes:
+            nid = node.get("id", "")
             self._db.upsert_entity(
                 name=node["label"],
                 entity_type=node.get("type", "concept"),
                 wiki_path=node.get("source_file", ""),
+                community=community_map.get(nid, -1),
+                tags=",".join(node.get("tags", [])),
+                entity_file=node.get("entity_file", ""),
+                source_file=node.get("source_file", ""),
+                level=node.get("level", ""),
+                content_hash=node.get("content_hash", ""),
             )
         for edge in edges:
             source_node = next((n for n in nodes if n["id"] == edge["source"]), None)

@@ -5,8 +5,11 @@
   import GraphCanvas from './GraphCanvas.svelte';
   import { MarkdownRenderer, Component, TFile } from 'obsidian';
   import { buildDirTree, computeVisibleGraph, computeBreadcrumb, collapseTo, expandAll } from './hierarchy';
+  import { ApiClient } from '../../api/client';
 
   let { plugin, app }: { plugin: FlammePlugin; app: App } = $props();
+
+  let apiClient: ApiClient = $derived(new ApiClient(plugin.settings));
 
   let graphData: GraphData | null = $state(null);
   let loading: boolean = $state(true);
@@ -39,9 +42,7 @@
     loading = true;
     error = '';
     try {
-      const resp = await fetch(`${plugin.settings.backendUrl}/api/graph/full`);
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      graphData = await resp.json();
+      graphData = await apiClient.getFullGraph();
     } catch (e: any) {
       error = e.message;
     } finally {
@@ -52,9 +53,7 @@
   async function buildGraph() {
     loading = true;
     try {
-      const resp = await fetch(`${plugin.settings.backendUrl}/api/graph/build`, { method: 'POST' });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      graphData = await resp.json();
+      graphData = await apiClient.buildGraph();
     } catch (e: any) {
       error = e.message;
     } finally {

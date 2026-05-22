@@ -49,6 +49,24 @@ class SQLiteClient:
         schema_path = Path(__file__).parent / "schema.sql"
         self._conn.executescript(schema_path.read_text(encoding="utf-8"))
         self._conn.commit()
+        # 增量迁移：补齐已有 DB 的 entities 新列
+        self._migrate_entities_columns()
+
+    def _migrate_entities_columns(self):
+        """为已有 DB 的 entities 表补齐新增列（幂等）"""
+        new_cols = [
+            ("community", "INTEGER DEFAULT -1"),
+            ("tags", "TEXT DEFAULT ''"),
+            ("entity_file", "TEXT DEFAULT ''"),
+            ("source_file", "TEXT DEFAULT ''"),
+            ("level", "TEXT DEFAULT ''"),
+            ("content_hash", "TEXT DEFAULT ''"),
+        ]
+        existing = {row[1] for row in self._conn.execute("PRAGMA table_info(entities)").fetchall()}
+        for col_name, col_type in new_cols:
+            if col_name not in existing:
+                self._conn.execute(f"ALTER TABLE entities ADD COLUMN {col_name} {col_type}")
+        self._conn.commit()
 
     def close(self):
         self._conn.close()
@@ -452,14 +470,23 @@ class SQLiteClient:
 
     # --- Entity / Relation 操作 ---
 
-    def upsert_entity(self, name: str, entity_type: str, wiki_path: str) -> int:
+    def upsert_entity(self, name: str, entity_type: str, wiki_path: str,
+                      community: int = -1, tags: str = '',
+                      entity_file: str = '', source_file: str = '',
+                      level: str = '', content_hash: str = '') -> int:
         """插入或更新实体，返回 entity id"""
         wiki_path = self._norm(wiki_path)
         cursor = self._conn.execute(
-            """INSERT INTO entities (name, type, wiki_path)
-               VALUES (?, ?, ?)
-               ON CONFLICT(name) DO UPDATE SET type=excluded.type, wiki_path=excluded.wiki_path""",
-            (name, entity_type, wiki_path),
+            """INSERT INTO entities (name, type, wiki_path, community, tags,
+                                      entity_file, source_file, level, content_hash)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(name) DO UPDATE SET
+                 type=excluded.type, wiki_path=excluded.wiki_path,
+                 community=excluded.community, tags=excluded.tags,
+                 entity_file=excluded.entity_file, source_file=excluded.source_file,
+                 level=excluded.level, content_hash=excluded.content_hash""",
+            (name, entity_type, wiki_path, community, tags,
+             entity_file, source_file, level, content_hash),
         )
         self._conn.commit()
         row = self._conn.execute("SELECT id FROM entities WHERE name=?", (name,)).fetchone()

@@ -90,17 +90,15 @@ class GraphBuilder(BaseTool):
         if not output_dir:
             output_dir = str(Path(vault_path) / ".wiki")
 
-        # 1. 扫描 .md 文件
+        # 1. 扫描 .md 文件 + entity 文件（任一有内容即可构建）
         md_files = self._find_markdown_files(vault_path)
-        if not md_files:
-            return ToolResult.err(f"vault 中没有 .md 文件: {vault_path}")
-
-        # 2. 提取节点和边
         md_nodes, md_edges = self._extract_all(md_files, incremental, output_dir, vault_path)
 
-        # 3. 提取 entity 节点（从 .flamme/entities/）并逆向到源 PDF
         entity_files = self._find_entity_files(vault_path)
         ent_nodes, ent_edges = self._extract_entities(entity_files, vault_path)
+
+        if not md_files and not entity_files:
+            return ToolResult.err(f"vault 中没有可用的内容文件: {vault_path}")
 
         # 4. 合并：entity 数据优先填充 source_file / entity_file
         all_nodes: dict[str, dict] = {n["id"]: n for n in md_nodes}

@@ -1,6 +1,7 @@
 """SQLite 知识存储实现 — 实现 KnowledgeStore Protocol"""
 
 import json
+import logging
 import os
 import sqlite3
 import time
@@ -8,6 +9,8 @@ from pathlib import Path
 from datetime import datetime
 
 from src.db.interfaces_kb import KnowledgeStore
+
+logger = logging.getLogger(__name__)
 
 
 class SQLiteClient:
@@ -498,6 +501,10 @@ class SQLiteClient:
         src = self._conn.execute("SELECT id FROM entities WHERE name=?", (source_name,)).fetchone()
         tgt = self._conn.execute("SELECT id FROM entities WHERE name=?", (target_name,)).fetchone()
         if not src or not tgt:
+            logger.warning(
+                "upsert_relation: entity not found — src=%s (found=%s), tgt=%s (found=%s), type=%s",
+                source_name, src is not None, target_name, tgt is not None, relation_type,
+            )
             return
         # 去重检查
         existing = self._conn.execute(

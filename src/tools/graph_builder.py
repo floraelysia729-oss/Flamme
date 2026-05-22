@@ -302,15 +302,18 @@ class GraphBuilder(BaseTool):
         """从所有文件提取节点和边。incremental=True 时跳过未变更文件
 
         source_file 统一存储 vault 相对路径（正斜杠），保证可移植。
+        两遍扫描：Pass 1 建所有节点，Pass 2 连边（解决文件序依赖）。
         """
         nodes = {}  # id → node dict
-        edges = []
+        # Pass 1 收集的提取数据，供 Pass 2 建边
+        pending_edges: list[tuple[str, str]] = []  # (source_node_id, rel_path)
 
         # 增量：加载已有 hash 映射，跳过未变更文件
         existing_hashes = {}
         if incremental:
             existing_hashes = self._load_existing_hashes(output_dir)
 
+        # ── Pass 1: 创建所有节点 + 收集边数据 ──
         for fp in md_files:
             try:
                 raw = fp.read_text(encoding="utf-8")
@@ -346,35 +349,29 @@ class GraphBuilder(BaseTool):
                     "content_hash": content_hash,
                 }
 
-            # 边 — wikilinks（只连到已有节点，不创建 phantom concept）
+            # 收集边数据（Pass 2 处理）
             for target in extract_wikilinks(content):
-                target_id = _node_id(target)
-                if target_id in nodes:
-                    edges.append({
-                        "source": node_id,
-                        "target": target_id,
-                        "relation": "related_to",
-                        "confidence": "EXTRACTED",
-                        "confidence_score": 1.0,
-                        "source_file": rel_path,
-                    })
+                pending_edges.append((node_id, _node_id(target), "wikilink", rel_path))
 
-            # 边 — related frontmatter（只连到已有节点）
             for rel in metadata.get("related", []):
                 if not isinstance(rel, str):
                     continue
                 rel_name = rel.strip("[]").strip()
                 if rel_name:
-                    rel_id = _node_id(rel_name)
-                    if rel_id in nodes:
-                        edges.append({
-                            "source": node_id,
-                            "target": rel_id,
-                            "relation": "related_to",
-                            "confidence": "EXTRACTED",
-                            "confidence_score": 1.0,
-                            "source_file": rel_path,
-                        })
+                    pending_edges.append((node_id, _node_id(rel_name), "frontmatter", rel_path))
+
+        # ── Pass 2: 连边（所有节点已存在） ──
+        edges = []
+        for src_id, tgt_id, _etype, rel_path in pending_edges:
+            if tgt_id in nodes:
+                edges.append({
+                    "source": src_id,
+                    "target": tgt_id,
+                    "relation": "related_to",
+                    "confidence": "EXTRACTED",
+                    "confidence_score": 1.0,
+                    "source_file": rel_path,
+                })
 
         return list(nodes.values()), edges
 

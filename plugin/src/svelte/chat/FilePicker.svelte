@@ -3,7 +3,7 @@
 
   let { app, selectedFiles = $bindable() }: { app: App; selectedFiles: string[] } = $props();
 
-  const SOURCE_EXTS = new Set(['pdf', 'pptx', 'ppt', 'excalidraw']);
+  const SOURCE_EXTS = new Set(['pdf', 'excalidraw', 'md']);
 
   let showPicker: boolean = $state(false);
   let expandedFolders: Set<string> = $state(new Set(['pro', 'lite']));
@@ -20,7 +20,8 @@
     const files = app.vault.getFiles()
       .filter(f => SOURCE_EXTS.has(f.extension.toLowerCase()))
       .filter(f => !f.path.startsWith('.'))
-      .filter(f => !f.path.includes('.flamme'));
+      .filter(f => !f.path.includes('.flamme'))
+      .filter(f => !f.path.startsWith('entities/'));
 
     const root: TreeNode[] = [];
 

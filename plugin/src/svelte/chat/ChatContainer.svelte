@@ -13,7 +13,7 @@
   let messages: Message[] = $state([]);
   let input: string = $state('');
   let streaming: boolean = $state(false);
-  let mode: 'search' | 'learn' = $derived(plugin.settings.defaultChatMode);
+  let mode: 'search' | 'learn' = $state(plugin.settings.defaultChatMode);
   let sessionId: string = $state(crypto.randomUUID());
   let elapsed: number = $state(0);
   let abortController: AbortController | null = $state(null);

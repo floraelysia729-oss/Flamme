@@ -12,6 +12,7 @@ import logging
 import os
 import queue as queue_mod
 import threading
+from pathlib import Path
 import time
 from datetime import date, datetime
 from typing import AsyncGenerator
@@ -304,16 +305,9 @@ TOOL_META = {
 }
 
 
-SYSTEM_PROMPT = """你是 LLM-WIKI 知识库的 AI 助手。你的职责不仅是回答问题，更是主动维护和丰富知识库。
+# ── 共享基础 prompt（所有模式共用） ──────────────────────────
 
-## 核心原则
-1. **完整执行**：用户请求包含多个任务时，必须全部完成。例如"搜索X并做PPT"，必须先搜索并展示结果，再做PPT
-2. **回答带引用**：提到知识库概念用 [[实体名]] 格式
-3. **发现即行动**：缺失实体 → 提示用户创建
-4. **冲突即标注**：新旧矛盾 → 明确指出
-5. **结构化输出**：复杂回答用标题、列表、表格
-
-## 工具使用策略
+BASE_PROMPT = """## 工具使用策略
 - 知识问题 → wiki_search → wiki_read_page（需要详情时）
 - **wiki_search 返回空 → 主动建议用户调用 wiki_sync 同步入库**
 - 全量同步/入库 → wiki_sync（首次使用、添加新文件后、搜索无结果时）
@@ -341,6 +335,7 @@ SYSTEM_PROMPT = """你是 LLM-WIKI 知识库的 AI 助手。你的职责不仅�
 
 ## 回答格式
 - 引用来源：`> 来源：[[页面名]]`
+- 概念连接用 [[wikilink]] 格式
 - 操作建议：`[建实体页] [加双链] [查图谱]`
 
 ## LaTeX 公式输出规则
@@ -350,7 +345,19 @@ SYSTEM_PROMPT = """你是 LLM-WIKI 知识库的 AI 助手。你的职责不仅�
 - 示例：写 `$\\frac{a}{b}$` 而不是 `` `$\\frac{a}{b}$` `` 或 `a/b`
 """
 
-LEARNING_SYSTEM_PROMPT = """你是学习助手。你的目标不是复述知识库内容，而是帮助用户真正理解。
+# ── 模式 overlay（拼接到 BASE_PROMPT 之后） ─────────────────
+
+SEARCH_OVERLAY = """你是 LLM-WIKI 知识库的 AI 助手。你的职责不仅是回答问题，更是主动维护和丰富知识库。
+
+## 核心原则
+1. **完整执行**：用户请求包含多个任务时，必须全部完成。例如"搜索X并做PPT"，必须先搜索并展示结果，再做PPT
+2. **回答带引用**：提到知识库概念用 [[实体名]] 格式
+3. **发现即行动**：缺失实体 → 提示用户创建
+4. **冲突即标注**：新旧矛盾 → 明确指出
+5. **结构化输出**：复杂回答用标题、列表、表格
+"""
+
+LEARN_OVERLAY = """你是学习助手。你的目标不是复述知识库内容，而是帮助用户真正理解。
 
 ## 核心原则
 1. **简洁优先**：先给一段简短回答（3-5句话），让用户快速抓住重点。不要一次性输出大段内容。
@@ -377,15 +384,6 @@ __SUGGESTIONS__: ["追问1", "追问2", "追问3"]
 - 具体明确，不要空泛
 - 难度递进
 - 只在回答最后一行出现
-
-## 回答格式
-- 引用来源：`> 来源：[[页面名]]`
-- 概念连接用 [[wikilink]] 格式
-
-## LaTeX 公式输出规则
-- 数学公式用 `$...$`（行内）或 `$$...$$`（独立行）包裹，前端会自动渲染
-- 不要在公式后面再用纯文本重复写一遍公式源码
-- 不要把公式放在代码块或行内代码中
 """
 
 
@@ -436,19 +434,21 @@ class Orchestrator:
         if self._conv:
             history = self._conv.get_messages_for_llm(session_id, n=10)
 
-        sys_prompt = LEARNING_SYSTEM_PROMPT if mode == "learn" else SYSTEM_PROMPT
+        sys_prompt = BASE_PROMPT + (LEARN_OVERLAY if mode == "learn" else SEARCH_OVERLAY)
 
         # 注入 vault 源文件列表，帮助 LLM 匹配模糊描述到具体路径
         file_listing = self._scan_source_files()
         if file_listing:
             sys_prompt += file_listing
 
-        # 学习模式 + 选中文件：注入文件约束
+        # 学习模式 + 选中文件：注入文件约束 + 预解析已转换文件
         if selected_files and mode == "learn":
             file_list = "\n".join(f"- {f}" for f in sorted(selected_files))
+            converted_info = self._resolve_converted_files(selected_files)
             sys_prompt += (
                 f"\n\n## 学习范围\n用户选定了以下源文件作为学习材料：\n{file_list}\n"
-                "优先从这些文件对应的已处理内容中检索（路径可能已转为 .flamme/converted/ 下的 .md）。"
+                f"{converted_info}"
+                "优先 wiki_search 检索已有内容，不要对已转换的文件重复调用 pdf_parse 或 document_ingest。"
                 "你自己补充的内容标注 `[补充]`。"
                 "如果 wiki_search 没有找到对应内容，说明该文件可能尚未处理，请如实告知用户。"
             )
@@ -674,6 +674,33 @@ class Orchestrator:
             "\n\n## Vault 源文件列表\n"
             "用户提到处理某个文件时，优先从此列表匹配路径，不要猜测：\n"
             f"{listing}"
+        )
+
+    def _resolve_converted_files(self, selected_files: list[str]) -> str:
+        """检查选中文件的 .flamme/converted/ 产物，返回给 LLM 的提示"""
+        if not self._vault_path:
+            return ""
+        vault = Path(self._vault_path)
+        converted = []
+        for f in selected_files:
+            f_norm = f.replace("\\", "/")
+            # 只检查二进制文件
+            if not f_norm.lower().endswith((".pdf", ".doc", ".docx", ".ppt", ".pptx")):
+                continue
+            abs_file = vault / f_norm
+            if not abs_file.exists():
+                continue
+            from src.tools.paths import source_dir_for_path, converted_dir
+            source_dir = source_dir_for_path(vault, abs_file)
+            conv_md = converted_dir(source_dir) / f"{abs_file.stem}.md"
+            if conv_md.exists():
+                rel_conv = str(conv_md.relative_to(vault)).replace("\\", "/")
+                converted.append(f"  - {f_norm} → 已转换为 {rel_conv}")
+        if not converted:
+            return ""
+        return (
+            "\n以下文件已有转换产物，无需重新解析：\n"
+            + "\n".join(converted) + "\n"
         )
 
     def _call_llm_with_retry(self, messages: list[dict], max_retries: int = 3):

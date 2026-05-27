@@ -100,20 +100,17 @@
           await MarkdownRenderer.render(app, content, panelEl, sourcePath, mdComponent);
         }
       } else {
-        const resp = await fetch(`${plugin.settings.backendUrl}/api/documents/${encodeURIComponent(sourcePath)}`);
-        if (resp.ok) {
-          const data = await resp.json();
-          const text = data.content || data.text || '';
-          if (text) {
-            panelEl.empty();
-            mdComponent = new Component();
-            mdComponent.load();
-            await MarkdownRenderer.render(app, text, panelEl, sourcePath, mdComponent);
-          } else {
-            panelEl.textContent = '文档内容为空';
-          }
+        const data = await apiClient.getDocument(sourcePath);
+        const text = data.content || data.text || '';
+        if (text) {
+          panelEl.empty();
+          mdComponent = new Component();
+          mdComponent.load();
+          await MarkdownRenderer.render(app, text, panelEl, sourcePath, mdComponent);
+        } else if (data.error) {
+          panelEl.textContent = data.error;
         } else {
-          panelEl.textContent = `文件未找到: ${sourcePath}`;
+          panelEl.textContent = '文档内容为空';
         }
       }
     } catch (e: any) {

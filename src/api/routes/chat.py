@@ -11,7 +11,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from src.api.deps import get_request_config, build_llm_from_config, build_brain_llm_from_config, get_config, get_request_config_or_default
+from src.api.deps import get_request_config, build_llm_from_config, build_brain_llm_from_config, get_request_config_or_default
 from src.config import Config
 
 
@@ -21,47 +21,17 @@ logger = logging.getLogger(__name__)
 
 class ChatRequest(BaseModel):
     message: str
-    agent: str | None = None
     session_id: str | None = None
     mode: str = "search"
     selected_files: list[str] | None = None
 
 
-def _build_thread_orchestrator(cfg: Config, llm, brain_llm):
+def _build_thread_orchestrator(cfg: Config):
     """在 producer 线程中构建独立的 Orchestrator（每个线程独立 SQLite 连接）"""
-    from src.db.client import SQLiteClient
-    from src.db.conversation import ConversationStore
-    from src.tools.embedding_store import EmbeddingStore
-    from src.tools.bootstrap import build_registry
-    from src.agent.orchestrator import Orchestrator
-    from src.agent.coordinator import Coordinator
-    from src.agent.agent import Agent
-    from src.llm.queue import LLMQueue
+    from src.api.runtime import build_runtime
 
-    emb = EmbeddingStore(cfg.embeddings_dir, dim=cfg.embed_dim)
-    llm_queue = LLMQueue(max_concurrency=cfg.max_concurrency) if llm else None
-
-    # 每个线程独立的 SQLite 连接
-    db = SQLiteClient(cfg.db_path, vault_path=cfg.vault_path)
-    conv_store = ConversationStore(cfg.conversations_db)
-
-    # 共享工具注册（单一来源）
-    registry = build_registry(cfg, db, llm=llm, embedding_store=emb)
-
-    orchestrator_llm = brain_llm or llm
-    agent = Agent(tools=registry, db=db, llm=llm, embedding_store=emb, llm_queue=llm_queue)
-    coordinator = Coordinator(
-        agent=agent, db=db, tools=registry,
-        llm=llm, brain_llm=brain_llm,
-        embedding_store=emb, llm_queue=llm_queue,
-    )
-    return Orchestrator(
-        brain_llm=orchestrator_llm,
-        tool_registry=registry,
-        coordinator=coordinator,
-        conversation_store=conv_store,
-        vault_path=cfg.vault_path,
-    )
+    runtime = build_runtime(cfg)
+    return runtime["orchestrator"], runtime["db"]
 
 
 def _sse_stream(question: str, session_id: str, cfg: Config,
@@ -80,11 +50,11 @@ def _sse_stream(question: str, session_id: str, cfg: Config,
         return
 
     token_queue = queue_mod.Queue()
-    t0 = time.time()
 
     def producer():
+        db = None
         try:
-            orchestrator = _build_thread_orchestrator(cfg, llm, brain_llm)
+            orchestrator, db = _build_thread_orchestrator(cfg)
             for token in orchestrator.chat(session_id, question, mode=mode, selected_files=selected_files):
                 token_queue.put(token)
         except Exception as e:
@@ -93,6 +63,8 @@ def _sse_stream(question: str, session_id: str, cfg: Config,
             logger.exception("SSE producer failed: %s", e)
             token_queue.put(f"__ERROR__{type(e).__name__}: {e}\n{tb}")
         finally:
+            if db is not None:
+                db.close()
             token_queue.put(None)
 
     thread = threading.Thread(target=producer, daemon=True)
@@ -103,7 +75,6 @@ def _sse_stream(question: str, session_id: str, cfg: Config,
             try:
                 token = token_queue.get(timeout=1)
             except queue_mod.Empty:
-                # 长任务期间维持 SSE 连接，避免 120s 无事件被误判为失败
                 yield f"data: {json.dumps({'type': 'heartbeat'}, ensure_ascii=False)}\n\n"
                 continue
             if token is None:

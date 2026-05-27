@@ -7,6 +7,7 @@
   import FilePicker from './FilePicker.svelte';
   import type { Message } from '../../types';
   import { extractSuggestionQuestions } from '../../lib/markdown';
+  import { ApiClient } from '../../api/client';
 
   let { plugin, app }: { plugin: FlammePlugin; app: App } = $props();
 
@@ -30,15 +31,12 @@
 
   async function loadSessionHistory() {
     try {
-      const resp = await fetch(`${plugin.settings.backendUrl}/api/chat/sessions`);
-      if (!resp.ok) return;
-      const data = await resp.json();
+      const client = new ApiClient(plugin.settings);
+      const data = await client.getSessions();
       if (data.sessions && data.sessions.length > 0) {
         const latest = data.sessions[0];
         sessionId = latest.session_id;
-        const sessionResp = await fetch(`${plugin.settings.backendUrl}/api/chat/sessions/${latest.session_id}`);
-        if (!sessionResp.ok) return;
-        const sessionData = await sessionResp.json();
+        const sessionData = await client.getSession(latest.session_id);
         if (sessionData.messages && sessionData.messages.length > 0) {
           const loaded: Message[] = [];
           for (const m of sessionData.messages) {

@@ -2,7 +2,7 @@
 
 from src.tools.registry import ToolRegistry
 from src.tools.markdown_parser import MarkdownParser
-from src.tools.markdown_writer import MarkdownWriter
+from src.tools.graph_query import GraphQueryTool
 
 
 def test_register_and_get():
@@ -18,12 +18,12 @@ def test_register_and_get():
 def test_list_tools():
     registry = ToolRegistry()
     registry.register(MarkdownParser())
-    registry.register(MarkdownWriter())
+    registry.register(GraphQueryTool())
 
     tools = registry.list_tools()
     names = [t["name"] for t in tools]
     assert "markdown_parser" in names
-    assert "markdown_writer" in names
+    assert "graph_query" in names
 
 
 def test_get_nonexistent():
@@ -37,6 +37,6 @@ def test_register_replaces():
     p1 = MarkdownParser()
     p2 = MarkdownParser()
     registry.register(p1)
-    registry.register(p2)  # 同名覆盖
+    registry.register(p2)
 
     assert registry.get("markdown_parser") is p2

@@ -9,9 +9,8 @@ import pytest
 
 from src.db.client import SQLiteClient
 from src.agent.worker import BaseWorker
-from src.agent.workers import IngestWorker, QueryWorker, LintWorker, SlidesWorker
+from src.agent.workers import IngestWorker, QueryWorker, LintWorker
 from src.agent.coordinator import Coordinator
-from src.agent.agent import Agent
 from src.agent.interfaces import WorkerProtocol
 from src.tools.registry import ToolRegistry
 from src.tools.markdown_parser import MarkdownParser
@@ -262,10 +261,16 @@ class TestBaseWorker:
 
 
 class TestLintWorker:
-    def test_lint_clean(self, db, tools):
-        # 放入一个完整文档
+    def test_lint_clean(self, db, tools, vault):
+        db._vault_path = vault
+        rel = "lite/clean.md"
+        abs_path = os.path.join(vault, rel)
+        os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+        Path(abs_path).write_text(
+            "---\ntitle: 干净文档\ntags: [测试]\n---\n\n内容\n", encoding="utf-8"
+        )
         db.put_document({
-            "path": "clean.md",
+            "path": rel,
             "title": "干净文档",
             "level": "lite",
             "status": "draft",
@@ -296,81 +301,19 @@ class TestLintWorker:
         assert "Lint 发现" in result["_result"]
 
 
-class TestSlidesWorker:
-    def test_slides_repair_on_incomplete_output(self, db, tools, vault):
-        class FakeLLM:
-            def __init__(self):
-                self.calls = 0
-
-            def complete(self, messages, **kwargs):
-                self.calls += 1
-                if self.calls == 1:
-                    return "这是一个提纲，不是 HTML"
-                slides = "\n".join(
-                    [f'<section class="slide"><h2>S{i}</h2></section>' for i in range(1, 9)]
-                )
-                return f"<!DOCTYPE html><html><head><title>x</title></head><body>{slides}</body></html>"
-
-        out_dir = os.path.join(vault, "slides_out")
-        db.push_task("slides", {"topic": "测试主题", "outline": "", "output_dir": out_dir})
-
-        llm = FakeLLM()
-        worker = SlidesWorker("w1", db=db, tools=tools, llm=llm)
-        result = worker.run_once()
-
-        assert result is not None
-        assert result["_status"] == "done"
-        assert "(8 页)" in result["_result"]
-        assert llm.calls == 2
-
-
 # ── Coordinator 集成测试 ────────────────────────────────────────
 
 
 class TestCoordinator:
-    """Router → task_queue → Worker → 结果"""
+    """dispatch → task_queue → Worker → wait_for"""
 
-    def test_coordinator_simple_status(self, db, tools):
-        """status 命令走单 Agent 快速返回"""
-        agent = Agent(tools=tools, db=db)
-        coord = Coordinator(agent=agent, db=db, tools=tools, max_workers=2)
-        result = coord.run("status")
-        assert "文档总数" in result
-
-    def test_coordinator_ingest_single(self, db, tools, vault):
-        """单文件 ingest 不拆解，直接执行"""
+    def test_dispatch_ingest(self, db, tools, vault):
         path = os.path.join(vault, "test.md")
-        agent = Agent(tools=tools, db=db)
-        coord = Coordinator(agent=agent, db=db, tools=tools, max_workers=2)
-        result = coord.run(f'ingest "{path}"', level="lite")
+        coord = Coordinator(db=db, tools=tools, max_workers=2)
+        task_id = coord.dispatch("ingest", {"path": path, "level": "lite"})
+        result = coord.wait_for(task_id, timeout=10)
+        assert isinstance(result, str)
         assert "已导入" in result
-
-    def test_coordinator_decompose_index(self, db, tools, vault):
-        """全量索引拆解为多个任务"""
-        # 先放入几个文档
-        for name in ["a.md", "b.md", "c.md"]:
-            path = os.path.join(vault, name)
-            Path(path).write_text(f"---\ntitle: {name}\n---\n\n{name} 内容\n", encoding="utf-8")
-            db.put_document({
-                "path": path, "title": name, "level": "lite",
-                "status": "draft", "tags": [], "word_count": 10,
-                "content_hash": f"hash_{name}",
-            })
-
-        agent = Agent(tools=tools, db=db)
-        coord = Coordinator(agent=agent, db=db, tools=tools, max_workers=2)
-        result = coord.run("index --full")
-        # 应该执行了多个 ingest 任务
-        assert "任务完成" in result or "已导入" in result
-        # 回归：worker 必须成功 claim，不能卡在 pending
-        assert db.get_tasks_by_status("pending") == []
-
-    def test_coordinator_run_single(self, db, tools):
-        """run_single 走单 Agent"""
-        agent = Agent(tools=tools, db=db)
-        coord = Coordinator(agent=agent, db=db, tools=tools, max_workers=2)
-        result = coord.run_single("status")
-        assert "文档总数" in result
 
     def test_dispatch_executes_exact_task_id(self, db, tools, vault):
         """dispatch 后 worker 必须执行本次 task_id，而不是队列里更旧任务"""
@@ -379,8 +322,7 @@ class TestCoordinator:
 
         # 本次任务（应被执行）
         path = os.path.join(vault, "test.md")
-        agent = Agent(tools=tools, db=db)
-        coord = Coordinator(agent=agent, db=db, tools=tools, max_workers=2)
+        coord = Coordinator(db=db, tools=tools, max_workers=2)
         task_id = coord.dispatch("ingest", {"path": path, "level": "lite"})
         result = coord.wait_for(task_id, timeout=10)
 
@@ -432,35 +374,3 @@ class TestConcurrentClaim:
         # 第二个 claim 返回 None
         task2 = db.claim_task("w2", task_type="ingest")
         assert task2 is None
-
-
-class TestBrainLLMDecompose:
-    """brain_llm 辅助任务拆解"""
-
-    def test_decompose_with_brain_llm(self, db, tools):
-        """有 brain_llm 时 query 可以被拆解"""
-        from unittest.mock import MagicMock
-
-        agent = Agent(tools=tools, db=db)
-        brain_llm = MagicMock()
-        brain_llm.complete.return_value = "[]"
-
-        coord = Coordinator(
-            agent=agent, db=db, tools=tools, llm=MagicMock(), brain_llm=brain_llm,
-        )
-
-        # query 意图会尝试 brain_llm 拆解
-        tasks = coord._decompose("query", {"question": "什么是矩阵"})
-
-        # brain_llm 被调用了
-        brain_llm.complete.assert_called_once()
-        # 返回空列表（不需要拆解）
-        assert tasks == []
-
-    def test_decompose_without_brain_llm(self, db, tools):
-        """没有 brain_llm 时 query 不拆解"""
-        agent = Agent(tools=tools, db=db)
-        coord = Coordinator(agent=agent, db=db, tools=tools)
-
-        tasks = coord._decompose("query", {"question": "什么是矩阵"})
-        assert tasks == []

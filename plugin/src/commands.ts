@@ -2,6 +2,7 @@ import { Notice } from 'obsidian';
 import type FlammePlugin from './main';
 import { VIEW_TYPE_CHAT } from './views/ChatView';
 import { VIEW_TYPE_GRAPH } from './views/GraphView';
+import { ApiClient } from './api/client';
 
 export function registerCommands(plugin: FlammePlugin) {
   plugin.addCommand({
@@ -45,16 +46,9 @@ export function registerCommands(plugin: FlammePlugin) {
       const path = view.file?.path;
       if (!path) return;
       try {
-        const resp = await fetch(`${plugin.settings.backendUrl}/api/ingest`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path, level: 'lite' }),
-        });
-        if (resp.ok) {
-          new Notice(`Ingested: ${path}`);
-        } else {
-          new Notice(`Ingest failed: HTTP ${resp.status}`);
-        }
+        const client = new ApiClient(plugin.settings);
+        await client.ingestFile(path, 'lite');
+        new Notice(`Ingested: ${path}`);
       } catch (e: any) {
         new Notice(`Ingest failed: ${e.message}`);
       }

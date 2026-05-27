@@ -60,6 +60,9 @@ export class ApiClient {
     if (search) params.set('search', search);
     return this.fetchJSON<any>(`/documents?${params}`);
   }
+  getDocument(path: string) {
+    return this.fetchJSON<any>(`/documents/${encodeURIComponent(path)}`);
+  }
   searchDocuments(query: string, topK = 5) {
     return this.fetchJSON<any>('/documents/search', {
       method: 'POST',
@@ -88,14 +91,18 @@ export class ApiClient {
     });
   }
 
-  // Agents
-  listAgents() { return this.fetchJSON<any>('/agents'); }
+  syncVault(embed = false, graph = false) {
+    return this.fetchJSON<any>('/ingest/sync', {
+      method: 'POST',
+      body: JSON.stringify({ embed, graph }),
+    });
+  }
 
   // Health check
   async isHealthy(): Promise<boolean> {
     try {
-      const resp = await fetch(`${this.baseUrl}/status`);
-      return resp.ok;
+      await this.getStatus();
+      return true;
     } catch {
       return false;
     }

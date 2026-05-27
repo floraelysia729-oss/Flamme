@@ -1,7 +1,6 @@
 """具体 Worker 实现 — Ingest / Query / Lint / BatchTag
 
 每个 Worker 只处理自己类型的 task_queue 任务。
-逻辑复用自 Agent，但不走 Router。
 """
 
 import hashlib
@@ -203,18 +202,11 @@ class IngestWorker(BaseWorker):
         return f"已 OCR: {path} → {ocr_path} ({parsed.get('chars', '?')} chars)"
 
     def _auto_embed(self, doc_path: str, content: str, content_hash: str) -> bool:
-        if not self._llm or not self._embedding_store:
-            return False
-        if self._embedding_store.has_hash(content_hash):
-            return False
-        try:
-            embeddings = self._call_llm(self._llm.embed, [content])
-            vector = embeddings[0]
-            self._embedding_store.add(doc_path, vector, content_hash)
-            self._db.put_embedding(doc_path, content_hash)
-            return True
-        except Exception:
-            return False
+        from src.tools.embed_index import embed_one
+        return embed_one(
+            self._db, self._llm, self._embedding_store,
+            doc_path, content, content_hash, self._llm_queue,
+        )
 
     @staticmethod
     def _compute_hash(text: str) -> str:

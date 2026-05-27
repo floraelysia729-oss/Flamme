@@ -1,6 +1,7 @@
 import { Menu, Notice } from 'obsidian';
 import type FlammePlugin from './main';
 import { VIEW_TYPE_CHAT } from './views/ChatView';
+import { ApiClient } from './api/client';
 
 export function registerContextMenus(plugin: FlammePlugin) {
   // Editor right-click → "Ask Flamme about this"
@@ -31,16 +32,9 @@ export function registerContextMenus(plugin: FlammePlugin) {
             .setIcon('flame')
             .onClick(async () => {
               try {
-                const resp = await fetch(`${plugin.settings.backendUrl}/api/ingest`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ path: file.path, level: 'lite' }),
-                });
-                if (resp.ok) {
-                  new Notice(`Ingested: ${file.name}`);
-                } else {
-                  new Notice('Ingestion failed');
-                }
+                const client = new ApiClient(plugin.settings);
+                await client.ingestFile(file.path, 'lite');
+                new Notice(`Ingested: ${file.name}`);
               } catch (e: any) {
                 new Notice(`Ingestion failed: ${e.message}`);
               }

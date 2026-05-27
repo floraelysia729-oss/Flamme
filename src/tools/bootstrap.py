@@ -1,7 +1,6 @@
-"""工具注册引导 — 单一注册点，CLI 和 API 共用
+"""工具注册引导 — 单一注册点，API 共用
 
-所有工具在此注册一次，main.py 和 chat.py 都调用 build_registry()。
-避免重复维护两个注册列表。
+所有工具在此注册一次，路由层和 Orchestrator 都调用 build_registry()。
 """
 
 from src.tools.registry import ToolRegistry
@@ -15,7 +14,7 @@ from src.tools.glossary import GlossaryTool
 from src.db.graph_store import GraphStore
 
 
-def build_registry(config, db, llm=None, embedding_store=None) -> ToolRegistry:
+def build_registry(config, db, llm=None, embedding_store=None, llm_queue=None) -> ToolRegistry:
     """构建完整工具注册表。
 
     Args:
@@ -32,10 +31,13 @@ def build_registry(config, db, llm=None, embedding_store=None) -> ToolRegistry:
         WikiUpdatePageTool, EntityExtractTool,
     )
 
+    from src.tools.embed_index import EmbedIndexTool
+
     registry = ToolRegistry()
+    parser = MarkdownParser()
 
     # --- 基础工具 ---
-    registry.register(MarkdownParser())
+    registry.register(parser)
 
     # --- 图谱工具 ---
     gb = GraphBuilder()
@@ -46,9 +48,9 @@ def build_registry(config, db, llm=None, embedding_store=None) -> ToolRegistry:
 
     # --- Wiki 工具（需要 db + 可选 llm/embedding） ---
     registry.register(WikiSearchTool(db=db, embedding_store=embedding_store, llm=llm))
-    registry.register(WikiReadPageTool(db=db, parser=MarkdownParser()))
+    registry.register(WikiReadPageTool(db=db, parser=parser))
     registry.register(WikiCreatePageTool(db=db, vault_path=config.vault_path))
-    registry.register(WikiUpdatePageTool(db=db, parser=MarkdownParser()))
+    registry.register(WikiUpdatePageTool(db=db, parser=parser))
     registry.register(EntityExtractTool(llm=llm))
 
     # --- 术语表 ---
@@ -65,6 +67,15 @@ def build_registry(config, db, llm=None, embedding_store=None) -> ToolRegistry:
         base_url=config.ocr_base_url,
         model=config.ocr_model,
         vault_path=config.vault_path,
+    ))
+
+    # --- 向量索引 ---
+    registry.register(EmbedIndexTool(
+        db=db,
+        llm=llm,
+        embedding_store=embedding_store,
+        parser=parser,
+        llm_queue=llm_queue,
     ))
 
     return registry

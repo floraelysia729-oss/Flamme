@@ -43,6 +43,9 @@ python -m uvicorn src.api.app:app --port 8765 --reload
 
 # 生产模式（后台运行）
 python -m uvicorn src.api.app:app --port 8765
+
+# 或使用 entry point
+flamme
 ```
 
 默认端口 `8765`，启动后访问 `http://localhost:8765` 验证服务是否正常。
@@ -69,8 +72,9 @@ your-vault/
 
 **连接**
 - **Backend URL** — 本地部署填 `http://localhost:8765`，远程服务器填对应地址
-- **Vault Path** — 你的 Obsidian vault 绝对路径（如 `D:\notebook`）
-- **Test Connection** — 验证连通
+- **Test Connection** — 验证连通；成功时会显示文档数与 `vault_source`（应为 `header`）
+
+插件会自动从 Obsidian 读取当前 vault 绝对路径，并在每个 API 请求携带 `X-Vault-Path` header，**无需在设置页手动填写 vault 路径**。
 
 ## 环境变量
 
@@ -112,14 +116,25 @@ cp .env.example .env
 
 ```
   Obsidian Vault (本地)               Backend (本地/远程)
-  ┌──────────────────┐              ┌──────────────────┐
-  │ plugin (Svelte 5) │─── HTTP ───→│  FastAPI 路由     │
-  │   │               │              │   │               │
-  │ vault .md 文件    │              │  调用各 LLM API   │──→ DeepSeek / DashScope / MinerU
-  │ .flamme/ (AI生成) │              │  返回处理结果     │
-  │ .wiki/ (索引)     │  ← JSON ────│                   │
-  └──────────────────┘              └──────────────────┘
+  ┌──────────────────┐              ┌──────────────────────────────┐
+  │ plugin (Svelte 5) │─── HTTP ───→│  FastAPI 路由                 │
+  │  X-Vault-Path     │              │    ↓ VaultContext（vault）   │
+  │  X-LLM-Key 等     │              │    ↓ runtime 分层组装          │
+  │ vault .md 文件    │              │  Orchestrator / Tools / DB   │──→ LLM API
+  │ .flamme/ (AI生成) │              │  返回 JSON / SSE             │
+  │ .wiki/ (索引)     │  ← JSON ────│                               │
+  └──────────────────┘              └──────────────────────────────┘
 ```
+
+**后端组装分层**（[`src/api/runtime.py`](src/api/runtime.py)）：
+
+| 层级 | 函数 | 用途 |
+|------|------|------|
+| Config | `VaultContext` | 从 `X-Vault-Path` 解析 vault 与 DB 路径 |
+| 轻量读 | `build_db` | status、documents 列表 |
+| 工具调用 | `build_tools` | search、sync、graph build |
+| Worker | `build_coordinator` | ingest 单文件 |
+| Agent | `build_runtime` | chat（Orchestrator） |
 
 - **文件不离开本地** — 所有 .md 文件、SQLite 索引、向量数据都在你的 vault 里
 - **后端不存数据** — 只转发请求到 LLM 供应商，不持久化用户内容
@@ -150,6 +165,22 @@ vault/
 | `lite` | 课件、PPT | 转 .md，加标签建链接 |
 | `pro` | 论文、深度分析 | 完整概括，建实体页和概念页 |
 
+## HTTP 客户端契约
+
+Obsidian 插件与未来 Web 客户端 **MUST** 在每个 API 请求携带以下 header（与 [`plugin/src/api/client.ts`](plugin/src/api/client.ts) 同构）：
+
+| Header | 用途 |
+|--------|------|
+| `X-Vault-Path` | Obsidian vault 绝对路径（权威 vault 来源） |
+| `X-LLM-Key` | Chat 模型 API Key |
+| `X-Embed-Key` | 向量嵌入 API Key |
+| `X-Brain-Key` | Orchestrator API Key |
+| `X-MinerU-Token` | PDF/PPT 解析 Token |
+
+后端通过 `VaultContext` 解析 vault；无 `X-Vault-Path` 时 fallback 到 `LLM_WIKI_VAULT` / 自动检测，并记录 warning。`GET /api/status` 返回 `vault_path`、`vault_source`、`db_path` 供调试。
+
+CLI/scripts 不走 HTTP header，仍使用 `.env` 中的 `LLM_WIKI_VAULT`。
+
 ## API 端点
 
 | 端点 | 用途 |
@@ -158,7 +189,7 @@ vault/
 | `POST /api/documents/search` | 语义搜索 |
 | `POST /api/ingest/sync` | 同步索引 |
 | `GET /api/graph/full` | 知识图谱 |
-| `GET /api/status` | 状态统计 |
+| `GET /api/status` | 状态统计 + vault 解析信息（`vault_path`、`vault_source`） |
 
 ## CLI 工具
 

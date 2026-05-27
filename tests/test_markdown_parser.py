@@ -72,9 +72,9 @@ def test_execute_reads_file():
 
     try:
         result = parser.execute({"path": tmp_path})
-        assert "error" not in result
-        assert result["metadata"]["title"] == "临时文件"
-        assert "临时内容" in result["content"]
+        assert not result.is_error
+        assert result.data["metadata"]["title"] == "临时文件"
+        assert "临时内容" in result.data["content"]
     finally:
         os.unlink(tmp_path)
 
@@ -82,7 +82,7 @@ def test_execute_reads_file():
 def test_execute_nonexistent_file():
     parser = MarkdownParser()
     result = parser.execute({"path": "/nonexistent/file.md"})
-    assert "error" in result
+    assert result.is_error
 
 
 def test_parse_frontmatter_with_related():

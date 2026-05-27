@@ -154,3 +154,57 @@ class SyncTool(BaseTool):
 
     def validate_input(self, params: dict) -> list[str]:
         return []
+
+
+def run_vault_sync(
+    db,
+    vault_path: str,
+    registry=None,
+    *,
+    embed: bool = False,
+    graph: bool = False,
+) -> dict:
+    """扫描 vault 并同步 SQLite，可选 embedding / 图谱重建。
+
+    供 Orchestrator wiki_sync、POST /api/ingest/sync 等共用。
+    成功返回 data dict；失败返回 {"error": "..."}。
+    """
+    sync = SyncTool(db, vault_path)
+    result = sync.execute({})
+    if result.is_error:
+        return {"error": result.error}
+
+    data = dict(result.data)
+
+    if embed and data.get("to_embed") and registry:
+        embed_tool = registry.get("embed_index")
+        if embed_tool:
+            embed_result = embed_tool.execute({"full": False})
+            if embed_result.is_error:
+                data["embed_error"] = embed_result.error
+            else:
+                payload = embed_result.data if isinstance(embed_result.data, dict) else {}
+                data["embed_result"] = payload.get("result", embed_result.data)
+
+    if graph and registry:
+        gb = registry.get("graph_builder")
+        if gb:
+            gb_result = gb.execute({"vault_path": vault_path})
+            data["graph_result"] = "rebuilt" if not gb_result.is_error else gb_result.error
+
+    return data
+
+
+def format_sync_summary(data: dict) -> str:
+    """将 sync 结果格式化为用户可读摘要（Orchestrator 回复用）"""
+    added = len(data.get("added", []))
+    updated = len(data.get("updated", []))
+    removed = len(data.get("removed", []))
+    unchanged = data.get("unchanged", 0)
+    summary = (
+        f"同步完成：新增 {added}，更新 {updated}，"
+        f"删除 {removed}，未变 {unchanged}"
+    )
+    if data.get("embed_result"):
+        summary += f"\n{data['embed_result']}"
+    return summary

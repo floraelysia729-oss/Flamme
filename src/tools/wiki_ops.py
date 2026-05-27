@@ -1,6 +1,6 @@
 """Wiki 操作工具集 — 共享工具池
 
-供 Orchestrator / Agent / ToolExecutor 直接调用的知识库操作工具。
+供 Orchestrator 和 API 路由直接调用的知识库操作工具。
 每个工具继承 BaseTool，声明并发安全性。
 """
 
@@ -188,7 +188,7 @@ class WikiCreatePageTool(BaseTool):
             return ToolResult.err("未指定标题")
 
         today = date.today().isoformat()
-        vault = self._vault_path or self._detect_vault()
+        vault = self._vault_path
         if not vault:
             return ToolResult.err("vault 路径未配置")
 
@@ -229,14 +229,6 @@ class WikiCreatePageTool(BaseTool):
 
     def validate_input(self, params: dict) -> list[str]:
         return [] if params.get("title") else ["缺少 title 参数"]
-
-    @staticmethod
-    def _detect_vault() -> str:
-        current = Path.cwd()
-        for parent in [current] + list(current.parents):
-            if (parent / ".obsidian").is_dir():
-                return str(parent)
-        return ""
 
     @staticmethod
     def _hash(text: str) -> str:

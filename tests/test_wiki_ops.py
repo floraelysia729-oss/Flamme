@@ -25,10 +25,10 @@ def test_wiki_create_page_persists_document_with_valid_level():
             "tags": ["测试"],
             "related": [],
         })
-        assert "error" not in result
-        assert result.get("created") is True
+        assert not result.is_error
+        assert result.data.get("created") is True
 
-        doc = db.get_document(result["path"])
+        doc = db.get_document(result.data["path"])
         assert doc is not None
         assert doc["title"] == "测试主题页"
         assert doc["level"] == "pro"

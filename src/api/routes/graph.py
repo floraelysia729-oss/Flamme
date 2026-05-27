@@ -6,7 +6,7 @@
 from fastapi import APIRouter, Request
 
 from src.api.deps import get_request_config_or_default
-from src.db.client import SQLiteClient
+from src.api.runtime import build_db, build_tools
 from src.db.graph_store import GraphStore
 
 router = APIRouter(prefix="/graph")
@@ -14,7 +14,7 @@ router = APIRouter(prefix="/graph")
 
 def _graph_store(cfg) -> GraphStore:
     """从 per-request Config 构建 GraphStore"""
-    db = SQLiteClient(cfg.db_path, vault_path=cfg.vault_path)
+    db = build_db(cfg)
     return GraphStore(db._conn)
 
 
@@ -102,18 +102,14 @@ def get_graph_stats(request: Request):
 
 @router.post("/build")
 def build_graph(request: Request):
-    from src.tools.embedding_store import EmbeddingStore
-    from src.tools.bootstrap import build_registry
-    from src.api.deps import build_llm_from_config
     from src.tools.interfaces import ToolResult
 
     cfg = get_request_config_or_default(request)
-    db = SQLiteClient(cfg.db_path, vault_path=cfg.vault_path)
-    emb = EmbeddingStore(cfg.embeddings_dir, dim=cfg.embed_dim)
-    llm = build_llm_from_config(cfg)
-    tools = build_registry(cfg, db, llm=llm, embedding_store=emb)
+    runtime = build_tools(cfg)
+    db = runtime["db"]
+    registry = runtime["registry"]
     try:
-        build_tool = tools.get("graph_builder")
+        build_tool = registry.get("graph_builder")
         if not build_tool:
             return {"error": "graph_builder 未注册"}
         result = build_tool.execute({"vault_path": cfg.vault_path})
@@ -122,9 +118,10 @@ def build_graph(request: Request):
                 return {"error": result.error}
         elif isinstance(result, dict) and "error" in result:
             return {"error": result["error"]}
-        # 构建完成后从 DB 读取返回
         store = GraphStore(db._conn)
         return _to_force_graph_format(store.get_full_graph())
     except Exception as e:
         import traceback
         return {"error": f"{type(e).__name__}: {e}", "traceback": traceback.format_exc()}
+    finally:
+        db.close()

@@ -1,10 +1,10 @@
-"""Orchestrator — GLM 5.1 驱动的用户交互层
+"""Orchestrator — deepseek 驱动的用户交互层
 
 通过 function calling 理解用户意图，调度工具和 Worker。
 替代原有的关键词路由 Router。
 
 核心流程：
-  用户消息 → GLM 5.1 理解意图 → 调用工具/派发 Worker → 汇总结果 → 流式输出
+  用户消息 → deepseek 理解意图 → 调用工具/派发 Worker → 汇总结果 → 流式输出
 """
 
 import json
@@ -388,12 +388,12 @@ __SUGGESTIONS__: ["追问1", "追问2", "追问3"]
 
 
 class Orchestrator:
-    """用户交互层 — GLM 5.1，负责理解意图 + 调度工具/Worker"""
+    """用户交互层 —deepseek，负责理解意图 + 调度工具/Worker"""
 
     def __init__(self, brain_llm, tool_registry: ToolRegistry,
                  coordinator=None, conversation_store: ConversationStore = None,
                  vault_path: str = ""):
-        self._llm = brain_llm              # GLM 5.1
+        self._llm = brain_llm              # deepseek
         self._tools = tool_registry         # 共享工具池
         self._coordinator = coordinator     # Worker 调度器（可选）
         self._conv = conversation_store     # 会话记忆（可选）
@@ -884,37 +884,18 @@ class Orchestrator:
 
     def _handle_sync(self, args: dict) -> dict:
         """全量同步 vault 文件到知识库索引"""
-        from src.tools.sync import SyncTool
-        db = self._coordinator._db
-        sync = SyncTool(db, self._vault_path)
-        result = sync.execute(args)
-        if result.is_error:
-            return {"error": result.error}
+        from src.tools.sync import run_vault_sync, format_sync_summary
 
-        data = result.data
-        do_embed = args.get("embed", True)
-
-        # 通过 coordinator 的 agent 执行 embedding 索引
-        if do_embed and data.get("to_embed") and self._coordinator:
-            try:
-                agent = self._coordinator._agent
-                embed_result = agent._handle_index({"full": False})
-                data["embed_result"] = embed_result
-            except Exception as e:
-                logger.warning("自动 embedding 失败: %s", e)
-                data["embed_error"] = str(e)
-
-        added = len(data.get("added", []))
-        updated = len(data.get("updated", []))
-        removed = len(data.get("removed", []))
-        unchanged = data.get("unchanged", 0)
-        summary = (
-            f"同步完成：新增 {added}，更新 {updated}，"
-            f"删除 {removed}，未变 {unchanged}"
+        data = run_vault_sync(
+            self._coordinator._db,
+            self._vault_path,
+            self._tools,
+            embed=args.get("embed", True),
+            graph=args.get("graph", False),
         )
-        if data.get("embed_result"):
-            summary += f"\n{data['embed_result']}"
-        data["result"] = summary
+        if data.get("error"):
+            return data
+        data["result"] = format_sync_summary(data)
         return data
 
     def _execute_tool_streamed(self, tc: dict, tool) -> dict:

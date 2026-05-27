@@ -1,5 +1,6 @@
 import { App, PluginSettingTab, Setting, Notice } from 'obsidian';
 import type FlammePlugin from './main';
+import { ApiClient } from './api/client';
 
 export class FlammeSettingTab extends PluginSettingTab {
   plugin: FlammePlugin;
@@ -36,13 +37,10 @@ export class FlammeSettingTab extends PluginSettingTab {
         .setButtonText('Test')
         .onClick(async () => {
           try {
-            const resp = await fetch(`${this.plugin.settings.backendUrl}/api/status`);
-            if (resp.ok) {
-              const data = await resp.json();
-              new Notice(`Flamme: Connected — ${data.total_documents} docs`);
-            } else {
-              new Notice(`Flamme: Connection failed — HTTP ${resp.status}`);
-            }
+            const client = new ApiClient(this.plugin.settings);
+            const data = await client.getStatus();
+            const vaultHint = data.vault_source ? ` [vault: ${data.vault_source}]` : '';
+            new Notice(`Flamme: Connected — ${data.total_documents} docs${vaultHint}`);
           } catch (e: any) {
             new Notice(`Flamme: Connection failed — ${e.message}`);
           }

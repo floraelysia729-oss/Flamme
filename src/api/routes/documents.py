@@ -1,11 +1,35 @@
 """文档路由 — 列表、详情、搜索"""
 
+from contextlib import contextmanager
+
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel
 
-from src.api.deps import get_request_config_or_default
+from src.api.deps import get_vault_context
+from src.api.runtime import build_db, build_tools
+from src.api.document_ops import filter_documents, paginate, read_document, search_documents
 
 router = APIRouter(prefix="/documents")
+
+
+@contextmanager
+def _db_ctx(request: Request):
+    ctx = get_vault_context(request)
+    db = build_db(ctx.config)
+    try:
+        yield ctx, db
+    finally:
+        db.close()
+
+
+@contextmanager
+def _tools_ctx(request: Request):
+    ctx = get_vault_context(request)
+    bundle = build_tools(ctx.config)
+    try:
+        yield ctx, bundle["db"], bundle["registry"]
+    finally:
+        bundle["db"].close()
 
 
 class DocumentListResponse(BaseModel):
@@ -24,48 +48,18 @@ def list_documents(
     level: str | None = None,
     tag: str | None = None,
 ):
-    from src.db.client import SQLiteClient
-
-    cfg = get_request_config_or_default(request)
-    db = SQLiteClient(cfg.db_path, vault_path=cfg.vault_path)
-    docs = db.list_documents(level=level)
-    if search:
-        search_lower = search.lower()
-        docs = [d for d in docs if search_lower in d.get("title", "").lower()
-                or search_lower in d.get("path", "").lower()]
-    if tag:
-        docs = [d for d in docs if tag in d.get("tags", [])]
-    total = len(docs)
-    start = (page - 1) * per_page
-    items = docs[start:start + per_page]
-    return DocumentListResponse(items=items, total=total, page=page, per_page=per_page)
+    """分页列表 + 元数据关键词筛选（title/path 子串，非向量搜索）。"""
+    with _db_ctx(request) as (_ctx, db):
+        docs = filter_documents(db, level=level, tag=tag, search=search)
+        items, total = paginate(docs, page, per_page)
+        return DocumentListResponse(items=items, total=total, page=page, per_page=per_page)
 
 
 @router.get("/{file_path:path}")
 def get_document(file_path: str, request: Request):
-    from src.db.client import SQLiteClient
-    from src.tools.markdown_parser import MarkdownParser
-    from src.tools.interfaces import ToolResult
-
-    cfg = get_request_config_or_default(request)
-    db = SQLiteClient(cfg.db_path, vault_path=cfg.vault_path)
-    doc = db.get_document(file_path)
-    if not doc:
-        return {"error": "not found", "path": file_path}
-    content = ""
-    parser = MarkdownParser()
-    parsed = parser.execute({"path": db.resolve(doc["path"])})
-    if isinstance(parsed, ToolResult):
-        if not parsed.is_error:
-            content = parsed.data.get("content", "") if isinstance(parsed.data, dict) else ""
-    elif isinstance(parsed, dict) and "error" not in parsed:
-        content = parsed.get("content", "")
-    return {
-        "path": doc["path"],
-        "title": doc.get("title", ""),
-        "content": content,
-        "metadata": doc,
-    }
+    """单篇详情 — 正文经 wiki_read_page（含二进制 converted 路径）。"""
+    with _tools_ctx(request) as (ctx, db, registry):
+        return read_document(ctx, db, registry, file_path)
 
 
 class SearchRequest(BaseModel):
@@ -74,29 +68,7 @@ class SearchRequest(BaseModel):
 
 
 @router.post("/search")
-def search_documents(req: SearchRequest, request: Request):
-    from src.db.client import SQLiteClient
-    from src.tools.embedding_store import EmbeddingStore
-    from src.api.deps import build_llm_from_config
-
-    cfg = get_request_config_or_default(request)
-    db = SQLiteClient(cfg.db_path, vault_path=cfg.vault_path)
-    emb = EmbeddingStore(cfg.embeddings_dir, dim=cfg.embed_dim)
-    llm = build_llm_from_config(cfg)
-    if not llm or not emb or emb.count() == 0:
-        return {"results": [], "message": "向量索引为空或 LLM 未配置"}
-    try:
-        embeddings = llm.embed([req.query])
-        query_vector = embeddings[0]
-        results = emb.search(query_vector, top_k=req.top_k)
-        enriched = []
-        for r in results:
-            doc = db.get_document(r["doc_id"])
-            enriched.append({
-                "path": r["doc_id"],
-                "title": doc["title"] if doc else r["doc_id"],
-                "score": r["score"],
-            })
-        return {"results": enriched}
-    except Exception as e:
-        return {"results": [], "error": str(e)}
+def search_documents_route(req: SearchRequest, request: Request):
+    """语义/向量搜索 — 经 wiki_search（与对话内检索同路径）。"""
+    with _tools_ctx(request) as (_ctx, _db, registry):
+        return search_documents(registry, req.query, req.top_k)

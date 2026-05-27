@@ -31,7 +31,7 @@ ingest = [
 ]
 
 [project.scripts]
-llm-wiki = "src.main:main"
+flamme = "src.api.app:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

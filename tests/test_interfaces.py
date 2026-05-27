@@ -1,21 +1,18 @@
 """接口契约测试 — 验证所有 Protocol 可被实现类通过 isinstance 检查"""
 
-from src.tools.interfaces import Tool
+from src.tools.interfaces import Tool, ToolResult, BaseTool
 from src.llm.interfaces import LLMProvider
 from src.db.interfaces_kb import KnowledgeStore
-from src.agent.interfaces import AgentProtocol
+from src.agent.interfaces import WorkerProtocol
 from src.infra.interfaces import CheckpointManager, GitHelper
 
 
-# --- 最小实现类（用于验证 Protocol 兼容性）---
-
-
-class _DummyTool:
+class _DummyTool(BaseTool):
     name = "dummy"
     description = "dummy tool"
 
-    def execute(self, params: dict) -> dict:
-        return {}
+    def execute(self, params: dict) -> ToolResult:
+        return ToolResult.ok({})
 
 
 class _DummyLLM:
@@ -43,9 +40,13 @@ class _DummyStore:
         return {}
 
 
-class _DummyAgent:
-    def run(self, prompt: str, **kwargs) -> str:
-        return ""
+class _DummyWorker:
+    @property
+    def worker_type(self) -> str:
+        return "dummy"
+
+    def execute(self, task: dict) -> str:
+        return "ok"
 
 
 class _DummyCheckpoint:
@@ -70,9 +71,6 @@ class _DummyGit:
         pass
 
 
-# --- 契约测试 ---
-
-
 def test_tool_protocol():
     assert isinstance(_DummyTool(), Tool)
 
@@ -85,8 +83,8 @@ def test_knowledge_store_protocol():
     assert isinstance(_DummyStore(), KnowledgeStore)
 
 
-def test_agent_protocol():
-    assert isinstance(_DummyAgent(), AgentProtocol)
+def test_worker_protocol():
+    assert isinstance(_DummyWorker(), WorkerProtocol)
 
 
 def test_checkpoint_protocol():
@@ -97,12 +95,8 @@ def test_git_helper_protocol():
     assert isinstance(_DummyGit(), GitHelper)
 
 
-# --- 反向测试：缺少方法不应通过 ---
-
-
 class _IncompleteTool:
     name = "bad"
-    # 缺少 execute 和 description
 
 
 def test_incomplete_tool_fails():

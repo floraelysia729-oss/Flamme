@@ -200,15 +200,21 @@ class GraphBuilder(BaseTool):
             title = metadata.get("title", fp.stem)
             node_id = _node_id(title)
 
-            # 判断是否为 entity（frontmatter type 或路径在 entities/ 下）
-            is_entity = metadata.get("type") in ("entity", "concept") or "entities" in fp.parts
+            # 判断 wiki 页类型（frontmatter type 或路径在 entities/topics/ 等下）
+            wiki_page_parts = {"entities", "topics", "comparisons", "explorations"}
+            page_type = metadata.get("type", "")
+            is_wiki_page = (
+                page_type in ("entity", "concept", "topic", "comparison", "exploration")
+                or any(p in wiki_page_parts for p in fp.parts)
+            )
+            is_entity = page_type in ("entity", "concept") or "entities" in fp.parts
 
             if node_id not in nodes:
                 nodes[node_id] = {
                     "id": node_id,
                     "label": title,
-                    "type": metadata.get("type", "concept" if is_entity else "document"),
-                    "file_type": "entity" if is_entity else "document",
+                    "type": page_type or ("concept" if is_entity else "document"),
+                    "file_type": "entity" if is_entity else ("wiki_page" if is_wiki_page else "document"),
                     "source_file": rel_path,
                     "tags": extract_tags(metadata, content),
                     "level": metadata.get("level", ""),

@@ -18,7 +18,7 @@ from pathlib import Path
 
 sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)
 
-from src.scripts import VAULT, all_flamme_dirs, entities_dir, topics_dir
+from src.scripts import VAULT, all_flamme_dirs, all_wiki_page_files, entities_dir, topics_dir
 
 INDEX = VAULT / "index.md"
 LOG = VAULT / "log.md"
@@ -26,10 +26,14 @@ LOG_ARCHIVE = VAULT / "log-archive"
 
 
 def _all_wiki_files() -> list[Path]:
-    """扫描所有 .flamme/ 下的 .md 文件"""
-    files = []
-    for fd in all_flamme_dirs():
-        files.extend(fd.rglob("*.md"))
+    """扫描 vault 根 wiki 页 + 遗留 .flamme/ 下的 .md"""
+    files = list(all_wiki_page_files(VAULT))
+    seen = {f.resolve() for f in files}
+    for fd in all_flamme_dirs(VAULT):
+        for md in fd.rglob("*.md"):
+            if md.resolve() not in seen:
+                files.append(md)
+                seen.add(md.resolve())
     return sorted(files)
 ARCHIVE_THRESHOLD_LINES = 500
 ARCHIVE_THRESHOLD_MONTHS = 6
@@ -193,18 +197,22 @@ def rebuild_index():
     if missing_in_index:
         print(f"index.md 缺漏 {len(missing_in_index)} 个页面：")
         for name in sorted(missing_in_index):
-            # 确定类型：扫描所有 .flamme/ 子目录
             kind = "?"
-            for fd in all_flamme_dirs():
-                if (fd / "topics" / f"{name}.md").exists():
-                    kind = "topic"
-                    break
-                elif (fd / "entities" / f"{name}.md").exists():
-                    kind = "entity"
-                    break
-                elif (fd / "explorations" / f"{name}.md").exists():
-                    kind = "exploration"
-                    break
+            if (entities_dir(VAULT) / f"{name}.md").exists():
+                kind = "entity"
+            elif (topics_dir(VAULT) / f"{name}.md").exists():
+                kind = "topic"
+            else:
+                for fd in all_flamme_dirs(VAULT):
+                    if (fd / "topics" / f"{name}.md").exists():
+                        kind = "topic"
+                        break
+                    if (fd / "entities" / f"{name}.md").exists():
+                        kind = "entity"
+                        break
+                    if (fd / "explorations" / f"{name}.md").exists():
+                        kind = "exploration"
+                        break
             print(f"  - {name} ({kind})")
     else:
         print("index.md 已覆盖所有 wiki 页面。")
@@ -237,10 +245,16 @@ def lint():
     ref_count = {}  # page_name -> 被引用次数
     refs_from = {}  # page_name -> [引用者列表]
 
-    # 构建快速查找：name → 是否存在于某个 .flamme/entities/ 或 .flamme/topics/
+    # 构建快速查找：vault 根 wiki 页 + 遗留 .flamme/ 路径
     _entity_names = set()
     _topic_names = set()
-    for fd in all_flamme_dirs():
+    ent_dir = entities_dir(VAULT)
+    top_dir = topics_dir(VAULT)
+    if ent_dir.exists():
+        _entity_names.update(f.stem for f in ent_dir.glob("*.md"))
+    if top_dir.exists():
+        _topic_names.update(f.stem for f in top_dir.glob("*.md"))
+    for fd in all_flamme_dirs(VAULT):
         ed = fd / "entities"
         td = fd / "topics"
         if ed.exists():

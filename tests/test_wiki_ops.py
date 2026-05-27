@@ -27,6 +27,9 @@ def test_wiki_create_page_persists_document_with_valid_level():
         })
         assert not result.is_error
         assert result.data.get("created") is True
+        rel_path = result.data["path"].replace("\\", "/")
+        assert "/topics/" in rel_path or rel_path.startswith("topics/")
+        assert ".flamme" not in rel_path
 
         doc = db.get_document(result.data["path"])
         assert doc is not None

@@ -7,7 +7,9 @@
 from pathlib import Path
 from src.tools.paths import (
     flamme_dir, converted_dir, ocr_dir, entities_dir, topics_dir,
-    all_flamme_dirs, all_entity_files, source_dir_for_path, source_dir_from_vault_rel,
+    comparisons_dir, explorations_dir, page_type_dir,
+    all_flamme_dirs, all_entity_files, all_wiki_page_files,
+    source_dir_for_path, source_dir_from_vault_rel,
 )
 from src.config import detect_vault as _detect_vault
 

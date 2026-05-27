@@ -1,14 +1,23 @@
 """Flamme 路径工具 — 替代 scripts/flamme_paths.py
 
-提供 .flamme/ 目录结构管理，适配后端 Config 系统。
-所有函数接收 vault_path 参数，不依赖全局变量。
+源文件夹级 .flamme/ 仅保留 converted/、ocr/ 等中间产物。
+Vault 根级 wiki 页（entity/topic/comparison/exploration）放在可见目录。
 """
 
 from pathlib import Path
 
+WIKI_PAGE_DIRS = {
+    "entity": "entities",
+    "topic": "topics",
+    "comparison": "comparisons",
+    "exploration": "explorations",
+}
+
+LEGACY_WIKI_SUBDIRS = ("topics", "comparisons", "explorations", "entities")
+
 
 def flamme_dir(source_dir: Path) -> Path:
-    """源文件夹对应的 .flamme/ 路径"""
+    """源文件夹对应的 .flamme/ 路径（converted/ocr 中间产物）"""
     d = source_dir / ".flamme"
     d.mkdir(parents=True, exist_ok=True)
     return d
@@ -33,15 +42,39 @@ def entities_dir(vault_path: Path) -> Path:
     return d
 
 
-def topics_dir(source_dir: Path) -> Path:
-    d = flamme_dir(source_dir) / "topics"
-    d.mkdir(exist_ok=True)
+def page_type_dir(vault_path: Path, page_type: str) -> Path:
+    """Vault 级 wiki 页目录 — vault/{entities|topics|...}/"""
+    subdir = WIKI_PAGE_DIRS.get(page_type, "topics")
+    d = vault_path / subdir
+    d.mkdir(parents=True, exist_ok=True)
     return d
 
 
+def topics_dir(vault_path: Path) -> Path:
+    return page_type_dir(vault_path, "topic")
+
+
+def comparisons_dir(vault_path: Path) -> Path:
+    return page_type_dir(vault_path, "comparison")
+
+
+def explorations_dir(vault_path: Path) -> Path:
+    return page_type_dir(vault_path, "exploration")
+
+
 def all_flamme_dirs(vault_path: Path) -> list[Path]:
-    """扫描 vault 下所有 .flamme/ 目录"""
+    """扫描 vault 下所有源文件夹级 .flamme/ 目录"""
     return sorted(p for p in vault_path.rglob(".flamme") if p.is_dir())
+
+
+def all_wiki_page_files(vault_path: Path) -> list[Path]:
+    """扫描 vault 根下 entities/topics/comparisons/explorations 中的 .md"""
+    files: list[Path] = []
+    for sub in WIKI_PAGE_DIRS.values():
+        d = vault_path / sub
+        if d.is_dir():
+            files.extend(sorted(d.glob("*.md")))
+    return files
 
 
 def all_entity_files(vault_path: Path) -> set[str]:

@@ -9,7 +9,7 @@ import re
 from datetime import date
 from pathlib import Path
 
-from src.tools.paths import entities_dir
+from src.tools.paths import entities_dir, page_type_dir
 
 import yaml
 
@@ -195,10 +195,7 @@ class WikiCreatePageTool(BaseTool):
         if page_type == "entity":
             output_dir = entities_dir(Path(vault))
         else:
-            subdir = {"topic": "topics", "comparison": "comparisons",
-                      "exploration": "explorations"}.get(page_type, "topics")
-            output_dir = Path(vault) / ".flamme" / subdir
-            output_dir.mkdir(parents=True, exist_ok=True)
+            output_dir = page_type_dir(Path(vault), page_type)
 
         safe_name = re.sub(r'[\\/:*?"<>|]', '_', title)
         file_path = output_dir / f"{safe_name}.md"

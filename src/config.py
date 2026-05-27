@@ -78,13 +78,6 @@ class Config:
     def graph_json(self) -> str:
         return str(Path(self._wiki_dir) / "graph.json")
 
-    @property
-    def flamme_dir(self) -> str:
-        """Vault 级别 .flamme/ 目录（API 生成的主题页等）"""
-        d = Path(self.vault_path) / ".flamme"
-        d.mkdir(parents=True, exist_ok=True)
-        return str(d)
-
     # ── 路径工具 ──
     def to_relpath(self, path: str) -> str:
         """绝对路径 → vault 内相对路径（正斜杠）"""

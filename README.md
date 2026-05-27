@@ -144,14 +144,16 @@ cp .env.example .env
 
 ```
 vault/
+├── entities/                  ← 知识实体页（可见、可索引、进图谱）
+├── topics/                    ← 主题综述页
+├── comparisons/               ← 对比页
+├── explorations/              ← 探索页
 ├── {level}/{课程名}/          ← 人读区（原始文件）
 │   ├── 课件.pdf
 │   ├── 笔记.pptx
-│   └── .flamme/              ← AI 区（Flamme 管理）
+│   └── .flamme/              ← 源文件夹级 AI 中间产物
 │       ├── converted/        ← PDF/PPT 转换的 Markdown
-│       ├── entities/         ← 知识实体页
-│       ├── ocr/              ← OCR 文本
-│       └── topics/           ← 主题综述页
+│       └── ocr/              ← OCR 文本
 └── .wiki/                    ← 索引（可重建）
     ├── knowledge.db          ← SQLite 元数据
     └── embeddings/           ← 向量索引

@@ -287,6 +287,11 @@ WORKER_DISPATCH = {
 }
 
 # 工具元数据 — 用于前端进度展示
+# SSE 流式分级：
+#   - LLM token：每轮无 tool call 时实时推送
+#   - tool_status running/done：所有工具（含 Worker 派发）均有
+#   - tool_status progress：仅覆写 stream_execute 的工具（如 excalidraw_ocr）
+#   - Worker 派发（document_ingest 等）：走 _execute_tool_dict，阻塞等待，无中间 progress
 TOOL_META = {
     "wiki_search":      {"label": "搜索知识库",   "estimate": "~2s"},
     "wiki_read_page":   {"label": "读取页面",     "estimate": "~1s"},
@@ -475,9 +480,6 @@ class Orchestrator:
             content_parts = []
             tool_calls_acc = {}  # index -> {id, name, arguments}
             is_tool_mode = False
-            # 缓冲 LLM content：只有确认无 tool call 时才输出
-            # 有 tool call 时的 content 是 LLM 的"思考"，不应展示
-            content_buffer = []
 
             try:
                 for chunk in stream:
@@ -485,13 +487,13 @@ class Orchestrator:
                         continue
                     delta = chunk.choices[0].delta
 
-                    # 内容 token — 先缓冲
+                    # 内容 token — 无 tool call 时实时输出
                     if delta.content:
                         content_parts.append(delta.content)
                         if not is_tool_mode:
-                            content_buffer.append(delta.content)
+                            yield delta.content
 
-                    # 工具调用 — 累积
+                    # 工具调用 — 累积；有 tool call 时的 content 是 LLM 思考，不再输出
                     if delta.tool_calls:
                         is_tool_mode = True
                         for tc in delta.tool_calls:
@@ -514,11 +516,8 @@ class Orchestrator:
                 yield f"\n[流式响应中断: {e}]"
                 return
 
-            # 3. 无 tool call → 输出缓冲内容，保存后退出
+            # 3. 无 tool call → 保存后退出（token 已在上方实时 yield）
             if not is_tool_mode:
-                # 确认无工具调用，把缓冲的 content 输出给用户
-                for t in content_buffer:
-                    yield t
                 full_text = "".join(content_parts)
 
                 # 学习模式：清理保存的内容（不含 __SUGGESTIONS__）
@@ -586,9 +585,13 @@ class Orchestrator:
 
                 t0 = time.time()
 
-                # 检查工具是否支持流式进度
                 tool_obj = self._tools.get(tool_name) if self._tools else None
-                use_stream = tool_obj is not None and hasattr(tool_obj, "stream_execute")
+                # 仅真正覆写了 stream_execute 的工具走流式进度（避免所有 BaseTool 都开线程）
+                from src.tools.interfaces import BaseTool
+                use_stream = (
+                    tool_obj is not None
+                    and type(tool_obj).stream_execute is not BaseTool.stream_execute
+                )
 
                 if use_stream:
                     result = yield from self._execute_tool_streamed(tc, tool_obj)

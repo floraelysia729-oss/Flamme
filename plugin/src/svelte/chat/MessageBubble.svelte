@@ -5,7 +5,7 @@
   import type { App } from 'obsidian';
   import { extractSuggestionQuestions } from '../../lib/markdown';
 
-  let { msg, i, app, streaming, onsend, avatarState, isLastAssistant, avatarLabel }: {
+  let { msg, i, app, streaming, onsend, avatarState, isLastAssistant, waitElapsed = 0 }: {
     msg: Message;
     i: number;
     app: App;
@@ -13,7 +13,7 @@
     onsend: (text?: string) => void;
     avatarState?: 'peek' | 'look' | 'think' | 'happy' | 'answer' | 'confused';
     isLastAssistant?: boolean;
-    avatarLabel?: string;
+    waitElapsed?: number;
   } = $props();
 
   const IDLE_STATES: Array<'peek' | 'look' | 'think' | 'happy' | 'answer' | 'confused'> = ['peek', 'look', 'think', 'happy', 'answer', 'confused'];
@@ -33,6 +33,14 @@
   );
   let displayLabel = $derived(STATE_LABELS[activeState]);
 
+  function formatWait(ms: number): string {
+    const sec = Math.max(1, Math.ceil(ms / 1000));
+    if (sec < 60) return `${sec}s`;
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}m${s < 10 ? '0' : ''}${s}s`;
+  }
+
   let fallbackSuggestions = $derived(extractSuggestionQuestions(msg.content).questions);
   let suggestionQuestions = $derived(
     msg.suggestedQuestions && msg.suggestedQuestions.length > 0
@@ -46,9 +54,17 @@
     <div class="flamme-tool-status-list">
       {#each msg.toolStatus.filter(ts => ts.status !== 'done') as ts}
         <div class="flamme-tool-status flamme-tool-{ts.status}">
-          {#if ts.status === 'running'}
+          {#if ts.status === 'running' || ts.status === 'progress'}
             <span class="flamme-tool-spinner"></span>
-            <span class="flamme-tool-label">{ts.label} ...</span>
+            <span class="flamme-tool-label">
+              {ts.status === 'progress' && ts.message ? ts.message : `${ts.label}...`}
+            </span>
+            {#if ts.estimate}
+              <span class="flamme-tool-estimate">预计 {ts.estimate}</span>
+            {/if}
+            {#if isLastAssistant && streaming && waitElapsed > 0}
+              <span class="flamme-tool-elapsed">已等待 {formatWait(waitElapsed)}</span>
+            {/if}
             {#if ts.files && ts.files.length > 0}
               <div class="flamme-tool-files">
                 {#each ts.files.slice(0, 5) as f}
@@ -59,9 +75,6 @@
                 {/if}
               </div>
             {/if}
-          {:else if ts.status === 'progress'}
-            <span class="flamme-tool-spinner"></span>
-            <span class="flamme-tool-progress">{ts.message}</span>
           {/if}
         </div>
       {/each}

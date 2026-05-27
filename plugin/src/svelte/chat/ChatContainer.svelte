@@ -5,7 +5,7 @@
   import ChatInput from './ChatInput.svelte';
   import ModeToggle from './ModeToggle.svelte';
   import FilePicker from './FilePicker.svelte';
-  import type { Message } from '../../types';
+  import type { Message, ToolStatus } from '../../types';
   import { extractSuggestionQuestions } from '../../lib/markdown';
   import { ApiClient } from '../../api/client';
 
@@ -72,7 +72,42 @@
     const controller = new AbortController();
     abortController = controller;
 
-    const timer = setInterval(() => { elapsed = Date.now() - startTime; }, 1000);
+    const timer = setInterval(() => { elapsed = Date.now() - startTime; }, 200);
+
+    const patchAssistant = (patch: Partial<Message>) => {
+      messages[idx + 1] = { ...messages[idx + 1], ...patch };
+    };
+
+    const applyToolStatus = (event: ToolStatus & { type?: string }) => {
+      const list = [...(messages[idx + 1].toolStatus ?? [])];
+      const activeIdx = list.findLastIndex(
+        (ts) => ts.name === event.name && ts.status !== 'done',
+      );
+
+      if (event.status === 'done') {
+        if (activeIdx >= 0) {
+          list[activeIdx] = {
+            ...list[activeIdx],
+            status: 'done',
+            elapsed: event.elapsed,
+          };
+        }
+      } else if (event.status === 'progress') {
+        if (activeIdx >= 0) {
+          list[activeIdx] = {
+            ...list[activeIdx],
+            status: 'progress',
+            message: event.message,
+          };
+        } else {
+          list.push(event);
+        }
+      } else {
+        list.push(event);
+      }
+
+      patchAssistant({ toolStatus: list });
+    };
 
     try {
       const { streamChat } = await import('../../api/sse');
@@ -83,32 +118,31 @@
       for await (const event of streamChat(text, sessionId, controller.signal, mode, plugin.settings.backendUrl, mode === 'learn' ? selectedFiles : undefined, buildAuthHeaders(plugin.settings, getVaultPath()))) {
         if (abortController !== controller) return;
 
-        if (avatarState === 'think') avatarState = 'answer';
+        if (event.type === 'heartbeat') continue;
+
+        if (avatarState === 'think' && event.type === 'token') avatarState = 'answer';
 
         if (event.type === 'token' && event.content) {
           fullContent += event.content;
           tokens++;
-          messages[idx + 1].content = fullContent;
-          messages[idx + 1].tokenCount = tokens;
-          messages[idx + 1].duration = Math.round((Date.now() - startTime) / 100) / 10;
+          patchAssistant({
+            content: fullContent,
+            tokenCount: tokens,
+            duration: Math.round((Date.now() - startTime) / 100) / 10,
+          });
         } else if (event.type === 'tool_status') {
           avatarState = 'look';
-          if (!messages[idx + 1].toolStatus) messages[idx + 1].toolStatus = [];
-          const list = messages[idx + 1].toolStatus!;
-          const last = list[list.length - 1];
-          // 同名工具的 progress 更新最后一个 running 条目
-          if (last && last.name === event.name && last.status === 'running' && event.status === 'progress') {
-            last.message = event.message;
-          } else {
-            list.push(event as any);
-          }
+          applyToolStatus(event as ToolStatus & { type?: string });
         } else if (event.type === 'tool_call' && event.content) {
-          if (!messages[idx + 1].toolCalls) messages[idx + 1].toolCalls = [];
-          messages[idx + 1].toolCalls!.push(event.content);
+          const toolCalls = [...(messages[idx + 1].toolCalls ?? []), event.content];
+          patchAssistant({ toolCalls });
         } else if (event.type === 'error' && event.content) {
-          messages[idx + 1].content += `\n\n**错误:** ${event.content}`;
+          patchAssistant({ content: `${messages[idx + 1].content}\n\n**错误:** ${event.content}`.trim() });
+          break;
         } else if (event.type === 'suggested_questions' && event.questions) {
-          messages[idx + 1].suggestedQuestions = event.questions;
+          patchAssistant({ suggestedQuestions: event.questions });
+        } else if (event.type === 'done') {
+          break;
         }
       }
 

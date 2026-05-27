@@ -69,7 +69,8 @@
     messages.length;
     trackedAssistant?.content;
     trackedAssistant?.toolCalls?.length;
-    trackedAssistant?.suggestedQuestions?.length;
+    trackedAssistant?.toolStatus?.length;
+    trackedAssistant?.toolStatus?.map((ts) => `${ts.name}:${ts.status}:${ts.message ?? ''}`).join('|');
     scrollToBottomSignal;
     streamAssistantIndex;
     followAssistantUntilFull;
@@ -108,12 +109,13 @@
       {msg} {i} {app} {streaming} {onsend}
       avatarState={msg.role === 'assistant' ? avatarState : undefined}
       isLastAssistant={msg.role === 'assistant' && i === messages.length - 1}
+      waitElapsed={msg.role === 'assistant' && i === messages.length - 1 && streaming ? elapsed : 0}
     />
   {/each}
 
-  {#if streaming && elapsed > 0}
+  {#if streaming && !messages.some((m, i) => m.role === 'assistant' && i === messages.length - 1 && ((m.toolStatus?.some(ts => ts.status !== 'done')) || m.content))}
     <div class="flamme-thinking">
-      Thinking... {formatElapsed(elapsed)}
+      思考中... {formatElapsed(Math.max(elapsed, 200))}
     </div>
   {/if}
 </div>

@@ -5,7 +5,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api.routes import chat, documents, graph, ingest, status
+from src.api.routes import chat, documents, graph, ingest, status, vault
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,6 +33,7 @@ app.include_router(documents.router, prefix="/api")
 app.include_router(graph.router, prefix="/api")
 app.include_router(ingest.router, prefix="/api")
 app.include_router(status.router, prefix="/api")
+app.include_router(vault.router, prefix="/api")
 
 
 def main():

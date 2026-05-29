@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 from src.agent.worker import BaseWorker
 from src.db.client import SQLiteClient
 from src.tools.interfaces import ToolResult
+from src.tools.sync import SOURCE_LEVEL, is_source_doc
 
 
 class IngestWorker(BaseWorker):
@@ -26,7 +27,6 @@ class IngestWorker(BaseWorker):
 
     def _execute_task(self, payload: dict) -> str:
         path = payload.get("path", "")
-        level = payload.get("level", "")
 
         if not path:
             return "错误: 未指定文件路径"
@@ -34,10 +34,6 @@ class IngestWorker(BaseWorker):
         # 相对路径 → 绝对路径
         if not os.path.isabs(path) and self._db._vault_path:
             path = os.path.join(self._db._vault_path, path)
-
-        # 从路径自动推断 level（pro/lite/raw）
-        if not level:
-            level = self._infer_level(path)
 
         # PPT/PPTX: 先转 PDF（同目录），再走 PDF 流程
         if path.lower().endswith((".ppt", ".pptx")):
@@ -50,28 +46,12 @@ class IngestWorker(BaseWorker):
         if path.endswith(".excalidraw.md"):
             return self._handle_excalidraw(path)
         elif path.lower().endswith((".pdf", ".doc", ".docx")):
-            return self._handle_pdf(path, level)
+            return self._handle_pdf(path)
 
         # 默认: Markdown 处理
-        return self._handle_markdown(path, level)
+        return self._handle_markdown(path)
 
-    @staticmethod
-    def _infer_level(path: str) -> str:
-        """从文件路径推断处理级别: pro/xxx → pro, lite/xxx → lite, 默认 lite"""
-        # 归一化路径分隔符
-        p = path.replace("\\", "/")
-        # 去掉 vault 前缀部分，看第一段
-        for prefix in ("pro/", "lite/", "raw/"):
-            if f"/{prefix}" in f"/{p}" or p.startswith(prefix):
-                return prefix.rstrip("/")
-        # 也检查 vault 内相对路径
-        parts = p.split("/")
-        for part in parts:
-            if part in ("pro", "lite", "raw"):
-                return part
-        return "lite"
-
-    def _handle_markdown(self, path: str, level: str) -> str:
+    def _handle_markdown(self, path: str) -> str:
         parser = self._tools.get("markdown_parser")
         if not parser:
             return "错误: markdown_parser 未注册"
@@ -86,14 +66,15 @@ class IngestWorker(BaseWorker):
         if "title" not in metadata:
             metadata["title"] = os.path.splitext(os.path.basename(path))[0]
         if "level" not in metadata:
-            metadata["level"] = level
+            metadata["level"] = SOURCE_LEVEL
 
         content_hash = self._compute_hash(content)
+        relpath = self._db._norm(path) if self._db._vault_path else path
 
         self._db.put_document({
-            "path": path,
+            "path": relpath,
             "title": metadata.get("title", ""),
-            "level": metadata.get("level", level),
+            "level": metadata.get("level", SOURCE_LEVEL),
             "status": metadata.get("status", "draft"),
             "tags": metadata.get("tags", []),
             "word_count": len(content),
@@ -101,8 +82,8 @@ class IngestWorker(BaseWorker):
         })
 
         # 自动 embedding
-        embedded = self._auto_embed(path, content, content_hash)
-        return f"已导入: {os.path.basename(path)} (level={metadata.get('level', level)})"
+        self._auto_embed(relpath, content, content_hash)
+        return f"已导入: {os.path.basename(path)}"
 
     def _ppt_to_pdf(self, ppt_path: str) -> str | None:
         """将 PPT/PPTX 转为 PDF（同目录），返回 PDF 绝对路径；失败返回 None"""
@@ -156,7 +137,7 @@ class IngestWorker(BaseWorker):
 
         return None
 
-    def _handle_pdf(self, path: str, level: str) -> str:
+    def _handle_pdf(self, path: str) -> str:
         tool = self._tools.get("pdf_parse")
         if not tool:
             return "错误: pdf_parse 未注册（需配置 MINERU_API_TOKEN）"
@@ -172,20 +153,20 @@ class IngestWorker(BaseWorker):
         saved_to = self._save_converted(path, markdown)
 
         content_hash = self._compute_hash(markdown)
+        relpath = self._db._norm(path) if self._db._vault_path else path
         self._db.put_document({
-            "path": path,
+            "path": relpath,
             "title": os.path.splitext(os.path.basename(path))[0],
-            "level": level,
+            "level": SOURCE_LEVEL,
             "status": "draft",
             "tags": [],
             "word_count": len(markdown),
             "content_hash": content_hash,
         })
-        self._auto_embed(path, markdown, content_hash)
+        self._auto_embed(relpath, markdown, content_hash)
 
-        # pro 级：触发实体构建
         entity_info = ""
-        if level == "pro" and self._llm:
+        if self._llm:
             entity_count = self._build_entities(saved_to)
             entity_info = f", {entity_count} 个实体页已创建" if entity_count else ""
 
@@ -316,11 +297,7 @@ class LintWorker(BaseWorker):
         return "lint"
 
     def _is_source_doc(self, path: str) -> bool:
-        """判断归一化后的路径是否属于 pro/lite/raw"""
-        if "copilot-custom-prompts" in path:
-            return False
-        return (path.startswith("pro/") or path.startswith("lite/")
-                or path.startswith("raw/"))
+        return is_source_doc(path)
 
     @staticmethod
     def _is_binary(path: str) -> bool:
@@ -344,7 +321,7 @@ class LintWorker(BaseWorker):
             for f in missing_files[:10]:
                 issues.append(f"  - {f}")
 
-        # ── 2. pro/lite/raw 文档的 frontmatter 检查 ──
+        # ── 2. 源文档 frontmatter 检查 ──
         fm_issues = []
         for doc in docs:
             if not self._is_source_doc(doc["path"]):
@@ -405,7 +382,7 @@ class LintWorker(BaseWorker):
         return f"Lint 发现 {len(docs)} 个文档中的问题:\n" + "\n".join(f"  - {i}" for i in issues)
 
     def _check_flamme_artifacts(self, docs: list[dict], vault: str) -> list[str]:
-        """检查二进制文件的 .flamme/converted/ 和 pro 级 .flamme/entities/ 产物"""
+        """检查二进制文件的 .flamme/converted/ 与 vault/entities/ 产物"""
         if not vault:
             return []
 
@@ -413,12 +390,9 @@ class LintWorker(BaseWorker):
         vault_path = Path(vault)
 
         missing_converted = []
-        missing_entities = []
-        entity_dirs_checked: set[str] = set()
 
         for doc in docs:
             doc_path = doc["path"]
-            level = doc.get("level", "")
             abs_path = Path(self._db.resolve(doc_path))
 
             if not self._is_binary(doc_path):
@@ -431,15 +405,6 @@ class LintWorker(BaseWorker):
             if not conv_md.exists():
                 missing_converted.append(doc_path)
 
-            # pro 级：检查 vault/entities/ 是否有实体页
-            if level == "pro":
-                source_key = str(source_dir)
-                if source_key not in entity_dirs_checked:
-                    entity_dirs_checked.add(source_key)
-                    ent_dir = entities_dir(vault_path)
-                    if ent_dir.exists() and not any(ent_dir.glob("*.md")):
-                        missing_entities.append(str(source_dir.relative_to(vault_path)))
-
         issues = []
         if missing_converted:
             issues.append(f"[转换缺失] {len(missing_converted)} 个二进制文件未生成 .flamme/converted/:")
@@ -447,10 +412,11 @@ class LintWorker(BaseWorker):
                 issues.append(f"  - {f}")
             if len(missing_converted) > 15:
                 issues.append(f"  ... 还有 {len(missing_converted) - 15} 个")
-        if missing_entities:
-            issues.append(f"[实体缺失] {len(missing_entities)} 个 pro 级目录无实体页:")
-            for d in missing_entities:
-                issues.append(f"  - {d}/entities/ (空)")
+        has_binary = any(self._is_binary(d["path"]) for d in docs)
+        if has_binary:
+            ent_dir = entities_dir(vault_path)
+            if ent_dir.exists() and not any(ent_dir.glob("*.md")):
+                issues.append("[实体缺失] vault/entities/ 为空（二进制摄入后应生成实体页）")
         return issues
 
     def _check_graph_nodes(self, docs: list[dict]) -> list[str]:

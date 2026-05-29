@@ -52,8 +52,41 @@ class SQLiteClient:
         schema_path = Path(__file__).parent / "schema.sql"
         self._conn.executescript(schema_path.read_text(encoding="utf-8"))
         self._conn.commit()
+        self._migrate_documents_level_constraint()
         # 增量迁移：补齐已有 DB 的 entities 新列
         self._migrate_entities_columns()
+
+    def _migrate_documents_level_constraint(self):
+        """旧库 documents.level CHECK 不含 source 时重建表（幂等）"""
+        self._conn.execute("DROP TABLE IF EXISTS documents_new")
+        row = self._conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='documents'"
+        ).fetchone()
+        if not row or "'source'" in (row[0] or ""):
+            self._conn.commit()
+            return
+        self._conn.execute("PRAGMA foreign_keys=OFF")
+        self._conn.executescript("""
+            CREATE TABLE IF NOT EXISTS documents_new (
+              path TEXT PRIMARY KEY,
+              title TEXT NOT NULL,
+              level TEXT CHECK(level IN ('raw','lite','pro','source')),
+              status TEXT DEFAULT 'draft',
+              content_hash TEXT,
+              word_count INTEGER,
+              embedding_id INTEGER,
+              created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+              updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+              FOREIGN KEY (embedding_id) REFERENCES embeddings(id)
+            );
+            INSERT INTO documents_new
+              SELECT path, title, level, status, content_hash, word_count,
+                     embedding_id, created_at, updated_at FROM documents;
+            DROP TABLE documents;
+            ALTER TABLE documents_new RENAME TO documents;
+        """)
+        self._conn.execute("PRAGMA foreign_keys=ON")
+        self._conn.commit()
 
     def _migrate_entities_columns(self):
         """为已有 DB 的 entities 表补齐新增列（幂等）"""

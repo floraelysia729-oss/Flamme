@@ -13,6 +13,12 @@ from src.tools.interfaces import BaseTool, InterruptBehavior, ToolResult
 
 SKIP_DIRS = {".wiki", ".obsidian", ".git", "node_modules", ".trash", ".claude", "__pycache__", "venv", ".venv", "site-packages"}
 
+# Wiki 系统页面前缀（非用户源资料）
+WIKI_PAGE_PREFIXES = ("entities/", "topics/", "comparisons/", "explorations/")
+
+# 统一文档级别（取代 pro/lite/raw）
+SOURCE_LEVEL = "source"
+
 
 def scan_all_md(vault_path: str) -> list[str]:
     """扫描 vault 中所有可索引的 .md 文件，返回相对路径列表"""
@@ -39,14 +45,25 @@ def content_hash(text: str) -> str:
 
 
 def infer_level(relpath: str) -> str:
-    """从路径推断级别：pro/xxx → pro, lite/xxx → lite, 其余 → raw"""
-    if relpath.startswith("pro/"):
-        return "pro"
-    elif relpath.startswith("lite/"):
-        return "lite"
-    elif relpath.startswith("raw/"):
-        return "raw"
-    return "lite"
+    """返回统一源文档级别（路径不再推断 pro/lite/raw）"""
+    return SOURCE_LEVEL
+
+
+def is_source_doc(relpath: str) -> bool:
+    """判断是否为 vault 中的用户源资料（非系统/wiki 页）"""
+    if not relpath or relpath.startswith("."):
+        return False
+    if "copilot-custom-prompts" in relpath:
+        return False
+    parts = relpath.replace("\\", "/").split("/")
+    if any(part in SKIP_DIRS for part in parts):
+        return False
+    if ".flamme" in parts:
+        return False
+    norm = relpath.replace("\\", "/")
+    if any(norm.startswith(p) for p in WIKI_PAGE_PREFIXES):
+        return False
+    return True
 
 
 class SyncTool(BaseTool):

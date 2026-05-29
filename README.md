@@ -148,9 +148,9 @@ vault/
 ├── topics/                    ← 主题综述页
 ├── comparisons/               ← 对比页
 ├── explorations/              ← 探索页
-├── {level}/{课程名}/          ← 人读区（原始文件）
+├── {课程名}/                  ← 人读区（原始文件，任意目录均可）
 │   ├── 课件.pdf
-│   ├── 笔记.pptx
+│   ├── 笔记.md
 │   └── .flamme/              ← 源文件夹级 AI 中间产物
 │       ├── converted/        ← PDF/PPT 转换的 Markdown
 │       └── ocr/              ← OCR 文本
@@ -159,13 +159,13 @@ vault/
     └── embeddings/           ← 向量索引
 ```
 
-## 三级处理规则
+## 源文件保护
 
-| 级别 | 适用 | 处理方式 |
-|------|------|---------|
-| `raw` | 日记、随笔 | 只加 frontmatter，不改原文 |
-| `lite` | 课件、PPT | 转 .md，加标签建链接 |
-| `pro` | 论文、深度分析 | 完整概括，建实体页和概念页 |
+| 原则 | 说明 |
+|------|------|
+| 不可删除 | 系统清理只删 SQLite 索引，不删 vault 源文件 |
+| 正文不改写 | LLM 产出写入 `.flamme/converted/` 或 `entities/` |
+| 元数据可维护 | 允许更新源 `.md` 的 frontmatter 与 tags |
 
 ## HTTP 客户端契约
 
@@ -198,10 +198,10 @@ CLI/scripts 不走 HTTP header，仍使用 `.env` 中的 `LLM_WIKI_VAULT`。
 CLI 用于批量操作和自动化：
 
 ```bash
-llm-wiki ingest "论文.pdf" --level pro     # 摄入文档
+llm-wiki ingest "课程/论文.pdf"            # 摄入文档
 llm-wiki sync --embed --graph              # 同步索引+图谱
-llm-wiki entity-build "pro/人工智能导论"     # 实体提取
-llm-wiki tag "pro/人工智能导论"              # 自动标签
+llm-wiki entity-build "课程/人工智能导论"     # 实体提取
+llm-wiki tag "课程/笔记.md"                # 自动标签
 llm-wiki fix --lint                        # 健康检查
 ```
 

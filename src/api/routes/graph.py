@@ -3,6 +3,8 @@
 查询来源：SQLite entities/relations 表（通过 GraphStore）
 """
 
+from pathlib import Path
+
 from fastapi import APIRouter, Request
 
 from src.api.deps import get_request_config_or_default
@@ -34,18 +36,21 @@ def _to_force_graph_format(data: dict) -> dict:
 
     nodes = []
     for n in nodes_list:
-        label = n.get("name", str(n.get("id", "")))
-        if degree_map.get(label, 0) == 0:
-            continue
+        node_id = n.get("name", str(n.get("id", "")))
+        source_file = n.get("source_file", n.get("wiki_path", ""))
+        display = Path(source_file).stem if source_file else node_id
+        if "/" in node_id or "\\" in node_id:
+            display = Path(node_id.replace("\\", "/")).stem
+        degree = degree_map.get(node_id, 0)
         node_item = {
-            "id": label,
-            "label": label,
+            "id": node_id,
+            "label": display,
             "type": n.get("type", "document"),
             "level": n.get("level", ""),
             "tags": n.get("tags", "").split(",") if n.get("tags") else [],
             "community": n.get("community", -1),
-            "val": degree_map.get(label, 0),
-            "source_file": n.get("source_file", n.get("wiki_path", "")),
+            "val": max(degree, 1) if degree == 0 else degree,
+            "source_file": source_file,
         }
         nodes.append(node_item)
 

@@ -327,24 +327,25 @@ def lint():
 # ── --check-fm ─────────────────────────────────────────────────────
 
 def check_frontmatter():
-    """检查 pro/lite/raw 下文件的 frontmatter 完整性"""
+    """检查 vault 源 .md 的 frontmatter 完整性"""
+    from src.tools.sync import is_source_doc
+
     issues = []
-    for level_dir in ["pro", "lite", "raw"]:
-        dp = VAULT / level_dir
-        if not dp.exists():
+    for md_file in sorted(VAULT.rglob("*.md")):
+        if md_file.name.endswith(".excalidraw.md"):
             continue
-        for md_file in sorted(dp.rglob("*.md")):
-            if md_file.name.endswith(".excalidraw.md"):
-                continue
-            text = md_file.read_text(encoding="utf-8")
-            fm = read_frontmatter(text)
-            if not fm:
-                issues.append(f"MISSING: {md_file.relative_to(VAULT)}")
-                continue
-            required = ["title", "date", "source", "level", "tags", "status"]
-            missing_fields = [f for f in required if f not in fm or not fm[f]]
-            if missing_fields:
-                issues.append(f"INCOMPLETE: {md_file.relative_to(VAULT)} missing {missing_fields}")
+        rel = str(md_file.relative_to(VAULT)).replace("\\", "/")
+        if not is_source_doc(rel):
+            continue
+        text = md_file.read_text(encoding="utf-8")
+        fm = read_frontmatter(text)
+        if not fm:
+            issues.append(f"MISSING: {md_file.relative_to(VAULT)}")
+            continue
+        required = ["title", "date", "source", "level", "tags", "status"]
+        missing_fields = [f for f in required if f not in fm or not fm[f]]
+        if missing_fields:
+            issues.append(f"INCOMPLETE: {md_file.relative_to(VAULT)} missing {missing_fields}")
 
     if issues:
         print(f"Found {len(issues)} issues:")

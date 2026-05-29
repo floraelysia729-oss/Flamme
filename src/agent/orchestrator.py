@@ -168,12 +168,11 @@ ORCHESTRATOR_TOOL_DEFS = [
         "type": "function",
         "function": {
             "name": "document_ingest",
-            "description": "摄入文档到知识库，自动按三级规则处理。",
+            "description": "摄入文档到知识库。源文件正文不改写；PDF 转写进 .flamme/converted/；可更新 frontmatter/tags。",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "文件路径"},
-                    "level": {"type": "string", "enum": ["raw", "lite", "pro"], "default": "lite"}
+                    "path": {"type": "string", "description": "文件路径"}
                 },
                 "required": ["path"]
             }
@@ -207,7 +206,7 @@ ORCHESTRATOR_TOOL_DEFS = [
         "type": "function",
         "function": {
             "name": "wiki_cleanup",
-            "description": '清理知识库脏数据。操作包括：purge_missing（删除DB中指向不存在文件的记录）、purge_graph_noise（删除图谱中单字噪声节点）。用户提到"清理脏数据"、"删除孤立记录"、"清理数据库"时调用此工具。',
+            "description": '清理知识库脏数据（仅 SQLite，永不删除 vault 源文件）。purge_missing=删除 DB 中指向不存在文件的记录；purge_graph_noise=清理图谱噪声节点；status=统计。',
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -333,10 +332,10 @@ BASE_PROMPT = """## 工具使用策略
 - 先用文字展示每个任务的中间结果，再继续下一个
 - 每个工具调用后，继续处理后续任务，直到所有任务完成
 
-## 三级处理规则
-- raw：不改原文，只加 frontmatter
-- lite：加 frontmatter + 标签 + 双链，不概括
-- pro：完整概括 + 建实体页 + 建概念页 + 更新综述
+## 源文件保护
+- 源文件（.md/.pdf 等）**不可删除**，**正文不可改写**
+- 允许更新源 .md 的 **frontmatter 和 tags**（用 wiki_batch_tags）
+- PDF/PPT 解析结果只写入 `.flamme/converted/`，实体页写入 `entities/`
 
 ## 回答格式
 - 引用来源：`> 来源：[[页面名]]`
@@ -794,13 +793,15 @@ class Orchestrator:
         return {"error": f"未知工具: {name}"}
 
     def _handle_batch_tags(self) -> dict:
-        """扫描缺 tags 文档，批量派发给 BatchTagWorker（仅 pro/lite/raw）"""
+        """扫描缺 tags 的源文档，批量派发给 BatchTagWorker"""
+        from src.tools.sync import is_source_doc
+
         db = self._coordinator._db
         docs = db.list_documents()
         payloads = []
         for doc in docs:
             p = doc["path"]
-            if not (p.startswith("pro/") or p.startswith("lite/") or p.startswith("raw/")):
+            if not is_source_doc(p):
                 continue
             # 二进制文件无法写入 frontmatter，跳过
             if p.lower().endswith((".pdf", ".doc", ".docx", ".ppt", ".pptx")):

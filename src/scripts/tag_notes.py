@@ -25,23 +25,23 @@ from src.scripts import VAULT
 # ── 标签词频收集 ──────────────────────────────────────────────────────
 
 def get_tag_vocabulary():
-    """扫描 pro/lite/raw 所有 .md 文件的 tags，返回 {tag: count}"""
+    """扫描 vault 源 .md 的 tags，返回 {tag: count}"""
     from llm_utils import read_frontmatter
+    from src.tools.sync import is_source_doc
 
     tags = {}
-    for level_dir in ["pro", "lite", "raw"]:
-        dp = VAULT / level_dir
-        if not dp.exists():
+    for md_file in VAULT.rglob("*.md"):
+        if md_file.name.endswith(".excalidraw.md"):
             continue
-        for md_file in dp.rglob("*.md"):
-            if md_file.name.endswith(".excalidraw.md"):
-                continue
-            text = md_file.read_text(encoding="utf-8")
-            fm = read_frontmatter(text)
-            if fm and "tags" in fm:
-                for tag in fm["tags"]:
-                    if isinstance(tag, str):
-                        tags[tag] = tags.get(tag, 0) + 1
+        rel = str(md_file.relative_to(VAULT)).replace("\\", "/")
+        if not is_source_doc(rel):
+            continue
+        text = md_file.read_text(encoding="utf-8")
+        fm = read_frontmatter(text)
+        if fm and "tags" in fm:
+            for tag in fm["tags"]:
+                if isinstance(tag, str):
+                    tags[tag] = tags.get(tag, 0) + 1
     return tags
 
 

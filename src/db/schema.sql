@@ -4,7 +4,7 @@
 CREATE TABLE IF NOT EXISTS documents (
   path TEXT PRIMARY KEY,
   title TEXT NOT NULL,
-  level TEXT CHECK(level IN ('raw','lite','pro')),
+  level TEXT CHECK(level IN ('raw','lite','pro','source')),
   status TEXT DEFAULT 'draft',
   content_hash TEXT,
   word_count INTEGER,

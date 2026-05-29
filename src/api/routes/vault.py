@@ -20,7 +20,6 @@ router = APIRouter(prefix="/vault")
 
 class VaultRunRequest(BaseModel):
     preset: str = "ingest"
-    level: str | None = Field(None, description="摄入级别 raw/lite/pro，默认从路径推断")
     embed: bool = True
     graph: bool = False
     cleanup: bool = True
@@ -84,7 +83,6 @@ def vault_run(req: VaultRunRequest, request: Request):
         result = run_vault(
             cfg, db, runtime["coordinator"], runtime["registry"],
             preset=req.preset,
-            level=req.level,
             embed=req.embed,
             graph=req.graph,
             cleanup=req.cleanup,

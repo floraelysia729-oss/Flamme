@@ -7,7 +7,7 @@ import hashlib
 import os
 from pathlib import Path
 
-from src.tools.sync import SKIP_DIRS, scan_all_md, content_hash, infer_level
+from src.tools.sync import SKIP_DIRS, scan_all_md, content_hash
 from src.tools.paths import converted_dir, source_dir_for_path
 
 
@@ -114,10 +114,6 @@ def scan_vault(vault_path: str, db) -> dict:
         "total_disk_md": len(scan_all_md(vault_path)),
         "total_db": len(db_docs),
     }
-
-
-def infer_level_for_path(relpath: str) -> str:
-    return infer_level(relpath)
 
 
 def estimate_seconds(plan: dict) -> int:

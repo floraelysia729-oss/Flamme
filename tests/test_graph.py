@@ -7,7 +7,8 @@ import sqlite3
 import tempfile
 from pathlib import Path
 
-from src.tools.graph_builder import GraphBuilder, extract_wikilinks, extract_tags, _node_id
+from src.tools.graph_builder import GraphBuilder, extract_wikilinks, extract_tags, _node_id, _doc_node_id
+from src.api.routes.graph import _to_force_graph_format
 from src.tools.graph_query import GraphQueryTool
 from src.db.graph_store import GraphStore
 from src.tools.interfaces import Tool
@@ -45,6 +46,26 @@ def test_node_id():
     assert _node_id("矩阵基础") == "矩阵基础"
     assert _node_id("A/B") == "a_b"
     assert _node_id("Test Node") == "test_node"
+
+
+def test_doc_node_id_uses_path():
+    assert _doc_node_id("课程/笔记.md") == "课程/笔记.md"
+
+
+def test_force_graph_includes_isolated_nodes():
+    data = {
+        "nodes": [
+            {"name": "alone.md", "type": "document", "source_file": "alone.md", "wiki_path": "alone.md", "tags": "", "level": "", "community": -1},
+            {"name": "矩阵基础", "type": "concept", "source_file": "矩阵基础.md", "wiki_path": "矩阵基础.md", "tags": "", "level": "", "community": 0},
+        ],
+        "edges": [
+            {"source": "矩阵基础", "target": "向量空间", "relation_type": "related_to"},
+        ],
+    }
+    out = _to_force_graph_format(data)
+    ids = {n["id"] for n in out["nodes"]}
+    assert "alone.md" in ids
+    assert any(n["val"] >= 1 for n in out["nodes"] if n["id"] == "alone.md")
 
 
 # ── GraphBuilder 测试 ──────────────────────────────────────────
@@ -104,15 +125,28 @@ def test_graph_builder_protocol():
     assert isinstance(builder, Tool)
 
 
+def test_graph_builder_one_node_per_md_file():
+    vault = tempfile.mkdtemp()
+    try:
+        Path(vault, "a.md").write_text("---\ntitle: Same\n---\n\n# A\n", encoding="utf-8")
+        Path(vault, "b.md").write_text("---\ntitle: Same\n---\n\n# B\n", encoding="utf-8")
+        builder = GraphBuilder()
+        result = builder.execute({"vault_path": vault, "incremental": False, "export_json": False})
+        assert not result.is_error, result.error
+        assert result.data["nodes"] == 2
+    finally:
+        _cleanup(vault)
+
+
 def test_graph_builder_creates_output():
     vault = _make_vault()
     builder = GraphBuilder()
     output_dir = os.path.join(vault, ".wiki")
 
     try:
-        result = builder.execute({"vault_path": vault, "output_dir": output_dir, "export_json": True})
+        result = builder.execute({"vault_path": vault, "output_dir": output_dir, "export_json": True, "incremental": False})
         assert not result.is_error, result.error
-        assert result.data["nodes"] >= 2  # at least doc nodes
+        assert result.data["nodes"] >= 3
         assert result.data["edges"] >= 1
         assert result.data["communities"] >= 0
 
@@ -341,7 +375,7 @@ def test_build_then_query():
         query_tool = GraphQueryTool(graph_store=store)
 
         # Neighbors
-        result = query_tool.execute({"action": "neighbors", "node": "矩阵基础"})
+        result = query_tool.execute({"action": "neighbors", "node": "矩阵基础.md"})
         assert not result.is_error, result.error
         assert result.data["degree"] >= 2
 

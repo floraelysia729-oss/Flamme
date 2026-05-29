@@ -97,9 +97,9 @@ class Config:
 
     @staticmethod
     def is_source_doc(relpath: str) -> bool:
-        """判断归一化后的相对路径是否属于 pro/lite/raw"""
-        return (relpath.startswith("pro/") or relpath.startswith("lite/")
-                or relpath.startswith("raw/"))
+        """判断归一化后的相对路径是否为用户源资料"""
+        from src.tools.sync import is_source_doc as _is_source_doc
+        return _is_source_doc(relpath)
 
 
 def detect_vault() -> str:

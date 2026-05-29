@@ -84,10 +84,10 @@ export class ApiClient {
   }
 
   // Ingest
-  ingestFile(path: string, level = 'lite') {
+  ingestFile(path: string) {
     return this.fetchJSON<any>('/ingest', {
       method: 'POST',
-      body: JSON.stringify({ path, level }),
+      body: JSON.stringify({ path }),
     });
   }
 

@@ -2,12 +2,12 @@
 LLM Wiki 摄入管道 — PPT/PDF → Markdown
 
 用法:
-  python scripts/ingest.py <file_or_dir> [--level lite|pro] [--name 名称] [--ppt2pdf]
+  python scripts/ingest.py <file_or_dir> [--name 名称] [--ppt2pdf]
 
 示例:
-  python scripts/ingest.py "E:/课件/矩阵论.pptx" --level pro
-  python scripts/ingest.py "D:/notebook/pro/数字系统设计" --level pro
-  python scripts/ingest.py chap1.pdf --level lite --name "计算机系统"
+  python scripts/ingest.py "E:/课件/矩阵论.pptx" --name 矩阵论
+  python scripts/ingest.py "D:/notebook/数字系统设计"
+  python scripts/ingest.py chap1.pdf --name "计算机系统"
 """
 
 import argparse
@@ -166,11 +166,11 @@ status: stable
 
 # ── 主流程 ─────────────────────────────────────────────────────────
 
-def process_file(filepath: Path, level: str, name: str = None, ppt2pdf_flag: bool = False):
-    """处理单个文件"""
+def process_file(filepath: Path, name: str = None, ppt2pdf_flag: bool = False):
+    """处理单个文件 — 输出到 {课程名}/.flamme/converted/"""
     ext = filepath.suffix.lower()
     dir_name = name or filepath.stem
-    source_dir = VAULT / level / dir_name
+    source_dir = VAULT / dir_name
     source_dir.mkdir(parents=True, exist_ok=True)
 
     file_stem = filepath.stem
@@ -179,7 +179,7 @@ def process_file(filepath: Path, level: str, name: str = None, ppt2pdf_flag: boo
         md_text = pdf_to_markdown(filepath)
         source = str(filepath.relative_to(VAULT)) if filepath.is_relative_to(VAULT) else filepath.name
 
-        md_text = make_frontmatter(file_stem, source, level) + md_text
+        md_text = make_frontmatter(file_stem, source, "source") + md_text
         out_md = converted_dir(source_dir) / f"{file_stem}.md"
         out_md.write_text(md_text, encoding="utf-8")
         print(f"  → {out_md}")
@@ -200,7 +200,7 @@ def process_file(filepath: Path, level: str, name: str = None, ppt2pdf_flag: boo
             except Exception as e:
                 print(f"  [warn] ppt2pdf failed: {e}")
 
-        md_text = make_frontmatter(file_stem, source, level) + md_text
+        md_text = make_frontmatter(file_stem, source, "source") + md_text
         out_md = converted_dir(source_dir) / f"{file_stem}.md"
         out_md.write_text(md_text, encoding="utf-8")
         print(f"  → {out_md}")
@@ -221,7 +221,6 @@ def process_file(filepath: Path, level: str, name: str = None, ppt2pdf_flag: boo
 def main():
     parser = argparse.ArgumentParser(description="LLM Wiki 摄入管道")
     parser.add_argument("path", help="文件或目录路径")
-    parser.add_argument("--level", choices=["raw", "lite", "pro"], default="lite", help="处理级别")
     parser.add_argument("--name", help="自定义目录名（默认用文件名）")
     parser.add_argument("--ppt2pdf", action="store_true", help="PPT 额外转 PDF 用 MinerU 解析（需安装 PowerPoint）")
     args = parser.parse_args()
@@ -249,12 +248,12 @@ def main():
         print("  Set it via: export MINERU_API_TOKEN=your-token")
         print()
 
-    print(f"Found {len(files)} file(s) to process (level={args.level})\n")
+    print(f"Found {len(files)} file(s) to process\n")
 
     results = []
     for f in files:
         print(f"[*] {f.name}")
-        result = process_file(f, args.level, args.name, args.ppt2pdf)
+        result = process_file(f, args.name, args.ppt2pdf)
         if result:
             results.append(result)
         print()

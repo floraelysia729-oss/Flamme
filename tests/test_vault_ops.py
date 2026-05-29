@@ -35,10 +35,10 @@ def _setup(vault_dir: str):
 def test_scan_detects_new_md_and_binary():
     vault_dir = tempfile.mkdtemp()
     try:
-        os.makedirs(os.path.join(vault_dir, "lite", "线代"), exist_ok=True)
-        md_path = os.path.join(vault_dir, "lite", "线代", "笔记.md")
-        write_md(md_path, "笔记", "内容", level="lite")
-        pdf_path = os.path.join(vault_dir, "lite", "线代", "课件.pdf")
+        os.makedirs(os.path.join(vault_dir, "线代"), exist_ok=True)
+        md_path = os.path.join(vault_dir, "线代", "笔记.md")
+        write_md(md_path, "笔记", "内容", level="source")
+        pdf_path = os.path.join(vault_dir, "线代", "课件.pdf")
         with open(pdf_path, "wb") as f:
             f.write(b"%PDF-1.4 fake")
 
@@ -58,7 +58,7 @@ def test_plan_after_ingest_index():
     vault_dir = tempfile.mkdtemp()
     try:
         md_path = os.path.join(vault_dir, "hello.md")
-        write_md(md_path, "Hello", "world", level="lite")
+        write_md(md_path, "Hello", "world", level="source")
 
         cfg, db, registry, coord = _setup(vault_dir)
         try:
@@ -82,7 +82,7 @@ def test_vault_api_plan_and_status():
     shutil.rmtree(vault_dir, ignore_errors=True)
     os.makedirs(vault_dir, exist_ok=True)
     try:
-        write_md(os.path.join(vault_dir, "a.md"), "A", "content", level="lite")
+        write_md(os.path.join(vault_dir, "a.md"), "A", "content", level="source")
 
         from src.api.app import app
         client = TestClient(app)
@@ -101,6 +101,26 @@ def test_vault_api_plan_and_status():
         assert "sync" in pdata["actions"]
     finally:
         shutil.rmtree(vault_dir, ignore_errors=True)
+
+def test_purge_missing_only_touches_db():
+    vault_dir = tempfile.mkdtemp()
+    try:
+        md_path = os.path.join(vault_dir, "keep.md")
+        write_md(md_path, "Keep", "body", level="source")
+        _, db, _, _ = _setup(vault_dir)
+        try:
+            db.put_document({
+                "path": "gone.md", "title": "Gone", "level": "source",
+                "content_hash": "x", "word_count": 1, "tags": [],
+            })
+            deleted = db.purge_missing()
+            assert "gone.md" in deleted
+            assert os.path.isfile(md_path)
+        finally:
+            db.close()
+    finally:
+        shutil.rmtree(vault_dir, ignore_errors=True)
+
 
 def test_baseline_save_load():
     wiki = tempfile.mkdtemp()

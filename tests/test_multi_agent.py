@@ -263,7 +263,7 @@ class TestBaseWorker:
 class TestLintWorker:
     def test_lint_clean(self, db, tools, vault):
         db._vault_path = vault
-        rel = "lite/clean.md"
+        rel = "clean.md"
         abs_path = os.path.join(vault, rel)
         os.makedirs(os.path.dirname(abs_path), exist_ok=True)
         Path(abs_path).write_text(

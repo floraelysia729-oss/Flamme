@@ -16,10 +16,9 @@
 - 摄入文档 → document_ingest
 - 检查整理 → wiki_lint
 
-## 三级处理规则
-- raw：不改原文，只加 frontmatter
-- lite：加 frontmatter + 标签 + 双链，不概括
-- pro：完整概括 + 建实体页 + 建概念页 + 更新综述
+## 源文件保护
+- 源文件不可删除；正文不可改写
+- 允许更新 frontmatter 与 tags；PDF 解析进 `.flamme/converted/`
 
 ## 回答格式
 - 引用来源：`> 来源：[[页面名]]`

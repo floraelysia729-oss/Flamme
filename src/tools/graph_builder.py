@@ -41,8 +41,16 @@ def extract_tags(metadata: dict, content: str) -> list[str]:
 
 
 def _node_id(name: str) -> str:
-    """规范化节点 ID"""
+    """规范化概念/实体节点 ID（基于标题）"""
     return re.sub(r"[^a-zA-Z0-9\u4e00-\u9fff]+", "_", name).strip("_").lower() or name.lower()
+
+
+def _doc_node_id(rel_path: str) -> str:
+    """文档节点 ID — 基于 vault 相对路径，保证每文件独立节点"""
+    return rel_path.replace("\\", "/")
+
+
+BINARY_DOC_EXTS = (".pdf", ".doc", ".docx", ".ppt", ".pptx")
 
 
 def _compute_hash(text: str) -> str:
@@ -97,6 +105,7 @@ class GraphBuilder(BaseTool):
             return ToolResult.err(f"vault 中没有可用的内容文件: {vault_path}")
 
         nodes, edges = self._extract_all(md_files, incremental, output_dir, vault_path)
+        nodes = self._add_binary_document_nodes(nodes, vault_path)
 
         if not nodes:
             return ToolResult.err("没有提取到有效节点")
@@ -168,10 +177,17 @@ class GraphBuilder(BaseTool):
         Entity 文件通过 frontmatter type 字段识别，sources 字段创建 entity→document 边。
         """
         nodes = {}  # id → node dict
-        # Pass 1 收集的边数据，供 Pass 2 建边
+        title_to_id: dict[str, str] = {}
         pending_edges: list[tuple[str, str, str, str]] = []  # (src_id, tgt_id, etype, rel_path)
 
-        # 增量：加载已有 hash 映射，跳过未变更文件
+        def _resolve_link(target: str) -> str:
+            t = target.strip()
+            return (
+                title_to_id.get(t)
+                or title_to_id.get(_node_id(t))
+                or _node_id(t)
+            )
+
         existing_hashes = {}
         if incremental:
             existing_hashes = self._load_existing_hashes(output_dir)
@@ -196,11 +212,8 @@ class GraphBuilder(BaseTool):
             # 解析 frontmatter
             metadata, content = self._parse_frontmatter(raw)
 
-            # 节点
             title = metadata.get("title", fp.stem)
-            node_id = _node_id(title)
 
-            # 判断 wiki 页类型（frontmatter type 或路径在 entities/topics/ 等下）
             wiki_page_parts = {"entities", "topics", "comparisons", "explorations"}
             page_type = metadata.get("type", "")
             is_wiki_page = (
@@ -209,29 +222,34 @@ class GraphBuilder(BaseTool):
             )
             is_entity = page_type in ("entity", "concept") or "entities" in fp.parts
 
-            if node_id not in nodes:
-                nodes[node_id] = {
-                    "id": node_id,
-                    "label": title,
-                    "type": page_type or ("concept" if is_entity else "document"),
-                    "file_type": "entity" if is_entity else ("wiki_page" if is_wiki_page else "document"),
-                    "source_file": rel_path,
-                    "tags": extract_tags(metadata, content),
-                    "level": metadata.get("level", ""),
-                    "content_hash": content_hash,
-                }
+            if is_entity or is_wiki_page:
+                node_id = _node_id(title)
+            else:
+                node_id = _doc_node_id(rel_path)
 
-            # 收集 wikilink 边（Pass 2 处理）
+            nodes[node_id] = {
+                "id": node_id,
+                "label": title,
+                "type": page_type or ("concept" if is_entity else "document"),
+                "file_type": "entity" if is_entity else ("wiki_page" if is_wiki_page else "document"),
+                "source_file": rel_path,
+                "tags": extract_tags(metadata, content),
+                "level": metadata.get("level", ""),
+                "content_hash": content_hash,
+            }
+            title_to_id[title] = node_id
+            title_to_id[fp.stem] = node_id
+            title_to_id[_node_id(title)] = node_id
+
             for target in extract_wikilinks(content):
-                pending_edges.append((node_id, _node_id(target), "wikilink", rel_path))
+                pending_edges.append((node_id, _resolve_link(target), "wikilink", rel_path))
 
-            # 收集 frontmatter related 边
             for rel in metadata.get("related", []):
                 if not isinstance(rel, str):
                     continue
                 rel_name = rel.strip("[]").strip()
                 if rel_name:
-                    pending_edges.append((node_id, _node_id(rel_name), "frontmatter", rel_path))
+                    pending_edges.append((node_id, _resolve_link(rel_name), "frontmatter", rel_path))
 
             # Entity sources → document 边
             if is_entity:
@@ -268,6 +286,30 @@ class GraphBuilder(BaseTool):
                 })
 
         return list(nodes.values()), edges
+
+    def _add_binary_document_nodes(self, nodes: list[dict], vault_path: str) -> list[dict]:
+        """为 documents 表中的二进制源文件补充图谱节点"""
+        if not self._db:
+            return nodes
+        by_id = {n["id"]: n for n in nodes}
+        for doc in self._db.list_documents():
+            relpath = doc.get("path", "").replace("\\", "/")
+            if not relpath.lower().endswith(BINARY_DOC_EXTS):
+                continue
+            nid = _doc_node_id(relpath)
+            if nid in by_id:
+                continue
+            by_id[nid] = {
+                "id": nid,
+                "label": doc.get("title") or Path(relpath).stem,
+                "type": "document",
+                "file_type": "document",
+                "source_file": relpath,
+                "tags": doc.get("tags") or [],
+                "level": doc.get("level", ""),
+                "content_hash": doc.get("content_hash", ""),
+            }
+        return list(by_id.values())
 
     def _parse_frontmatter(self, raw: str) -> tuple[dict, str]:
         """分离 frontmatter 和正文"""
@@ -398,11 +440,11 @@ class GraphBuilder(BaseTool):
         for node in nodes:
             nid = node.get("id", "")
             self._db.upsert_entity(
-                name=node["label"],
+                name=nid,
                 entity_type=node.get("type", "concept"),
                 wiki_path=node.get("source_file", ""),
                 community=community_map.get(nid, -1),
-                tags=",".join(node.get("tags", [])),
+                tags=",".join(node.get("tags", [])) if isinstance(node.get("tags"), list) else str(node.get("tags", "")),
                 entity_file="",
                 source_file=node.get("source_file", ""),
                 level=node.get("level", ""),
@@ -413,8 +455,8 @@ class GraphBuilder(BaseTool):
             target_node = next((n for n in nodes if n["id"] == edge["target"]), None)
             if source_node and target_node:
                 self._db.upsert_relation(
-                    source_name=source_node["label"],
-                    target_name=target_node["label"],
+                    source_name=source_node["id"],
+                    target_name=target_node["id"],
                     relation_type=edge.get("relation", "related_to"),
                     source_doc=edge.get("source_file", ""),
                 )

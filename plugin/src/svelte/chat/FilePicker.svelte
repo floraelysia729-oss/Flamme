@@ -4,11 +4,11 @@
   let { app, selectedFiles = $bindable() }: { app: App; selectedFiles: string[] } = $props();
 
   const SOURCE_EXTS = new Set(['pdf', 'excalidraw', 'md']);
+  const SKIP_PREFIXES = ['entities/', 'topics/', 'comparisons/', 'explorations/'];
 
   let showPicker: boolean = $state(false);
-  let expandedFolders: Set<string> = $state(new Set(['pro', 'lite']));
+  let expandedFolders: Set<string> = $state(new Set());
 
-  // Build tree from vault files
   interface TreeNode {
     name: string;
     path: string;
@@ -16,54 +16,60 @@
     children: TreeNode[];
   }
 
-  let tree = $derived(() => {
-    const files = app.vault.getFiles()
-      .filter(f => SOURCE_EXTS.has(f.extension.toLowerCase()))
-      .filter(f => !f.path.startsWith('.'))
-      .filter(f => !f.path.includes('.flamme'))
-      .filter(f => !f.path.startsWith('entities/'));
+  function isSourceFile(path: string): boolean {
+    if (path.startsWith('.') || path.includes('.flamme')) return false;
+    return !SKIP_PREFIXES.some(p => path.startsWith(p));
+  }
 
-    const root: TreeNode[] = [];
+  function buildTree(files: { path: string; basename: string; extension: string }[]): TreeNode[] {
+    const root: TreeNode = { name: '', path: '', isFolder: true, children: [] };
 
-    for (const level of ['pro', 'lite']) {
-      const levelFiles = files.filter(f => f.path.startsWith(level + '/'));
-      if (levelFiles.length === 0) continue;
-
-      const levelNode: TreeNode = { name: level, path: level, isFolder: true, children: [] };
-
-      for (const f of levelFiles) {
-        const parts = f.path.split('/');
-        // parts: ['pro', '课程名', '文件.pdf'] or ['pro', '文件.pdf']
-        if (parts.length === 2) {
-          // Direct file under level
-          levelNode.children.push({ name: f.basename, path: f.path, isFolder: false, children: [] });
-        } else if (parts.length >= 3) {
-          // File in subfolder
-          const folderName = parts[1];
-          let folder = levelNode.children.find(c => c.name === folderName && c.isFolder);
-          if (!folder) {
-            folder = { name: folderName, path: `${level}/${folderName}`, isFolder: true, children: [] };
-            levelNode.children.push(folder);
+    for (const f of files) {
+      const parts = f.path.split('/');
+      let current = root;
+      for (let i = 0; i < parts.length; i++) {
+        const isLast = i === parts.length - 1;
+        const seg = parts[i];
+        const segPath = parts.slice(0, i + 1).join('/');
+        if (isLast) {
+          current.children.push({
+            name: f.basename,
+            path: f.path,
+            isFolder: false,
+            children: [],
+          });
+        } else {
+          let child = current.children.find(c => c.isFolder && c.path === segPath);
+          if (!child) {
+            child = { name: seg, path: segPath, isFolder: true, children: [] };
+            current.children.push(child);
           }
-          folder.children.push({ name: f.basename, path: f.path, isFolder: false, children: [] });
+          current = child;
         }
       }
+    }
 
-      // Sort: folders first, then files
-      levelNode.children.sort((a, b) => {
+    function sortNode(node: TreeNode) {
+      node.children.sort((a, b) => {
         if (a.isFolder !== b.isFolder) return a.isFolder ? -1 : 1;
         return a.name.localeCompare(b.name);
       });
-      for (const child of levelNode.children) {
-        if (child.isFolder) {
-          child.children.sort((a, b) => a.name.localeCompare(b.name));
-        }
+      for (const c of node.children) {
+        if (c.isFolder) sortNode(c);
       }
-
-      root.push(levelNode);
     }
+    sortNode(root);
+    return root.children;
+  }
 
-    return root;
+  let tree = $derived(() => {
+    const files = app.vault.getFiles()
+      .filter(f => SOURCE_EXTS.has(f.extension.toLowerCase()))
+      .filter(f => isSourceFile(f.path));
+
+    return buildTree(
+      files.map(f => ({ path: f.path, basename: f.basename, extension: f.extension }))
+    );
   });
 
   function toggleFolder(path: string) {
@@ -102,17 +108,12 @@
     return paths.length > 0 && paths.every(p => selectedFiles.includes(p));
   }
 
-  function isFolderPartiallySelected(node: TreeNode): boolean {
-    const paths = collectFilePaths(node);
-    return paths.some(p => selectedFiles.includes(p)) && !isFolderFullySelected(node);
-  }
-
   function fileIcon(ext: string): string {
     switch (ext.toLowerCase()) {
       case 'pdf': return '📄';
       case 'pptx': case 'ppt': return '📊';
       case 'excalidraw': return '✏️';
-      default: return '📄';
+      default: return '📝';
     }
   }
 
@@ -122,8 +123,36 @@
   }
 </script>
 
+{#snippet folderTree(node: TreeNode, depth: number)}
+  {#if node.isFolder}
+    <div class="flamme-tree-folder" style="padding-left: {depth * 12}px">
+      <div class="flamme-tree-row flamme-tree-folder-row" onclick={() => toggleFolder(node.path)}>
+        <span class="flamme-tree-arrow">{expandedFolders.has(node.path) ? '▾' : '▸'}</span>
+        <input type="checkbox"
+          checked={isFolderFullySelected(node)}
+          class="flamme-tree-checkbox"
+          onclick={(e: Event) => { e.stopPropagation(); toggleFolderAll(node); }}
+        />
+        <span class="flamme-tree-name">📁 {node.name}/</span>
+        <span class="flamme-tree-count">{collectFilePaths(node).length}</span>
+      </div>
+      {#if expandedFolders.has(node.path)}
+        {#each node.children as child}
+          {@render folderTree(child, depth + 1)}
+        {/each}
+      {/if}
+    </div>
+  {:else}
+    <div class="flamme-tree-row flamme-tree-file-row" style="padding-left: {depth * 12 + 14}px" onclick={() => toggleFile(node.path)}>
+      <span class="flamme-tree-arrow"></span>
+      <input type="checkbox" checked={selectedFiles.includes(node.path)} class="flamme-tree-checkbox" />
+      <span class="flamme-tree-name">{fileIcon(getFileExt(node.path))} {node.name}</span>
+      <span class="flamme-tree-ext">.{getFileExt(node.path)}</span>
+    </div>
+  {/if}
+{/snippet}
+
 <div class="flamme-file-picker">
-  <!-- Selected files chips -->
   {#if selectedFiles.length > 0}
     <div class="flamme-selected-files">
       {#each selectedFiles as path}
@@ -136,77 +165,17 @@
     </div>
   {/if}
 
-  <!-- Toggle picker -->
   <button class="flamme-pick-btn" onclick={() => showPicker = !showPicker}>
     {showPicker ? '▼ 收起文件树' : '▶ 选择学习资料'}
   </button>
 
-  <!-- File tree -->
   {#if showPicker}
     <div class="flamme-tree">
-      {#each tree() as levelNode}
-        <div class="flamme-tree-level">
-          <!-- Level header (pro/lite) -->
-          <div class="flamme-tree-row flamme-tree-level-row" onclick={() => toggleFolder(levelNode.path)}>
-            <span class="flamme-tree-arrow">{expandedFolders.has(levelNode.path) ? '▾' : '▸'}</span>
-            <input type="checkbox"
-              checked={isFolderFullySelected(levelNode)}
-              class="flamme-tree-checkbox"
-              onclick={(e: Event) => { e.stopPropagation(); toggleFolderAll(levelNode); }}
-            />
-            <span class="flamme-tree-name flamme-tree-level-name">📁 {levelNode.name}/</span>
-            <span class="flamme-tree-count">{collectFilePaths(levelNode).length}</span>
-          </div>
-
-          <!-- Expanded content -->
-          {#if expandedFolders.has(levelNode.path)}
-            {#each levelNode.children as child}
-              {#if child.isFolder}
-                <!-- Subfolder -->
-                <div class="flamme-tree-folder">
-                  <div class="flamme-tree-row flamme-tree-folder-row" onclick={() => toggleFolder(child.path)}>
-                    <span class="flamme-tree-arrow">{expandedFolders.has(child.path) ? '▾' : '▸'}</span>
-                    <input type="checkbox"
-                      checked={isFolderFullySelected(child)}
-                      class="flamme-tree-checkbox"
-                      onclick={(e: Event) => { e.stopPropagation(); toggleFolderAll(child); }}
-                    />
-                    <span class="flamme-tree-name">📁 {child.name}/</span>
-                    <span class="flamme-tree-count">{child.children.length}</span>
-                  </div>
-                  {#if expandedFolders.has(child.path)}
-                    {#each child.children as file}
-                      <div class="flamme-tree-row flamme-tree-file-row" onclick={() => toggleFile(file.path)}>
-                        <span class="flamme-tree-arrow"></span>
-                        <input type="checkbox"
-                          checked={selectedFiles.includes(file.path)}
-                          class="flamme-tree-checkbox"
-                        />
-                        <span class="flamme-tree-name">{fileIcon(getFileExt(file.path))} {file.name}</span>
-                        <span class="flamme-tree-ext">.{getFileExt(file.path)}</span>
-                      </div>
-                    {/each}
-                  {/if}
-                </div>
-              {:else}
-                <!-- Direct file under level -->
-                <div class="flamme-tree-row flamme-tree-file-row" onclick={() => toggleFile(child.path)}>
-                  <span class="flamme-tree-arrow"></span>
-                  <input type="checkbox"
-                    checked={selectedFiles.includes(child.path)}
-                    class="flamme-tree-checkbox"
-                  />
-                  <span class="flamme-tree-name">{fileIcon(getFileExt(child.path))} {child.name}</span>
-                  <span class="flamme-tree-ext">.{getFileExt(child.path)}</span>
-                </div>
-              {/if}
-            {/each}
-          {/if}
-        </div>
+      {#each tree() as node}
+        {@render folderTree(node, 0)}
       {/each}
-
       {#if tree().length === 0}
-        <div class="flamme-tree-empty">暂无可选文件（PDF/PPT/Excalidraw）</div>
+        <div class="flamme-tree-empty">暂无可选文件</div>
       {/if}
     </div>
   {/if}
@@ -237,26 +206,17 @@
     width: 100%; text-align: center;
   }
 
-  /* Tree */
   .flamme-tree {
     margin-top: 4px; border: 1px solid var(--background-modifier-border);
     border-radius: 6px; background: var(--background-secondary);
     max-height: 260px; overflow-y: auto; font-size: 12px;
   }
-  .flamme-tree-level { border-bottom: 1px solid var(--background-modifier-border); }
-  .flamme-tree-level:last-child { border-bottom: none; }
 
   .flamme-tree-row {
     display: flex; align-items: center; gap: 2px;
     padding: 3px 6px; cursor: pointer; user-select: none;
   }
   .flamme-tree-row:hover { background: var(--background-modifier-hover); }
-
-  .flamme-tree-level-row {
-    padding: 5px 6px; font-weight: 600;
-  }
-  .flamme-tree-folder-row { padding-left: 14px; }
-  .flamme-tree-file-row { padding-left: 28px; }
 
   .flamme-tree-arrow {
     width: 14px; text-align: center; flex-shrink: 0; font-size: 10px;
@@ -268,7 +228,6 @@
   .flamme-tree-name {
     flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  .flamme-tree-level-name { color: var(--text-normal); }
   .flamme-tree-count {
     color: var(--text-faint); font-size: 10px; flex-shrink: 0;
   }

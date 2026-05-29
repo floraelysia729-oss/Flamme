@@ -13,11 +13,6 @@ router = APIRouter(prefix="/ingest")
 
 class IngestRequest(BaseModel):
     path: str
-    level: str = "lite"
-
-
-class IngestVaultRequest(BaseModel):
-    level: str = "lite"
 
 
 class SyncRequest(BaseModel):
@@ -32,7 +27,7 @@ def ingest_file(req: IngestRequest, request: Request):
     db = runtime["db"]
     coordinator = runtime["coordinator"]
     try:
-        task_id = coordinator.dispatch("ingest", {"path": req.path, "level": req.level})
+        task_id = coordinator.dispatch("ingest", {"path": req.path})
         result = coordinator.wait_for(task_id, timeout=600)
         if isinstance(result, dict) and result.get("error"):
             return {"status": "error", "result": result}

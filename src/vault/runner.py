@@ -5,7 +5,6 @@ import logging
 from src.tools.sync import run_vault_sync, format_sync_summary
 from src.vault.baseline import save_baseline
 from src.vault.planner import build_plan
-from src.vault.scanner import infer_level_for_path
 from src.infra.git_helper import GitHelper
 
 logger = logging.getLogger(__name__)
@@ -20,7 +19,6 @@ def run_vault(
     registry,
     *,
     preset: str = "ingest",
-    level: str | None = None,
     embed: bool = True,
     graph: bool = False,
     cleanup: bool = True,
@@ -51,8 +49,7 @@ def run_vault(
     if preset in ("ingest", "full") and binaries:
         payloads = []
         for relpath in binaries:
-            lv = level or infer_level_for_path(relpath)
-            payloads.append({"path": relpath, "level": lv})
+            payloads.append({"path": relpath})
         task_ids = coordinator.dispatch_batch("ingest", payloads)
         timeout = min(ingest_timeout, max(120.0, len(task_ids) * 120.0))
         batch_results = coordinator.wait_for_batch(task_ids, timeout=timeout)

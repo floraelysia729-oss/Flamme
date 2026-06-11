@@ -1,50 +1,24 @@
 # 敏感配置
 .env
-.env.local
-.env.*.local
-*.key
-*.key.pub
 
 # Python
 __pycache__/
 *.pyc
-*.py[cod]
 *.egg-info/
 dist/
 build/
 .venv/
 venv/
-.pytest_cache/
 
 # 测试 / 缓存
 .pytest_cache/
 
-# Node — plugin
+# Node
 plugin/node_modules/
-
-# Node — desktop
-desktop/node_modules/
-desktop/dist/
-desktop/dist-ssr/
-desktop/*.local
-
-# Desktop — Playwright / coverage
-desktop/test-results/
-desktop/playwright-report/
-desktop/coverage/
-
-# Desktop — Rust
-desktop/src-tauri/target/
-
-# Desktop — local Python path override
-desktop/flamme-backend/
-.python-path
 
 # IDE
 .vscode/
 .idea/
-desktop/.vscode/*
-!desktop/.vscode/extensions.json
 
 # 知识库数据（可由 sync 重建）
 .wiki/
@@ -66,13 +40,3 @@ Home DB
 # 运行时产物
 output/
 *.log
-logs/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-# Dev artifacts
-screenshots/
-demo-vault/

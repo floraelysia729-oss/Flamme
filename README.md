@@ -4,6 +4,8 @@ LLM 驱动的 Obsidian 知识库插件 — 智能摄入、语义检索、知识�
 
 > **隐私设计**：你的笔记文件始终留在本地 vault，从不上传。后端仅用你提供的 API Key 转发请求到 LLM 供应商，不存用户数据。
 
+桌面端请使用 [Flamme-desktop](https://github.com/floraelysia729-oss/Flamme-desktop)。
+
 ## 快速开始
 
 ### 前置条件
